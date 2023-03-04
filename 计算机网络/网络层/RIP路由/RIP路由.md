@@ -287,3 +287,232 @@ ICMP 报文是封装在 IP 数据包的载荷（pay load）部分，从第一行
 <div align="center">
     <img src="RIP路由_static/ping_icmp.png" width="700" height="450"/>
 </div>
+
+## 6. RIPv2 配置及实现
+
+### 6.1 案例一 RIPv2 基础配置
+
+<div align="center">
+    <img src="RIP路由_static/15_rip_config.png" width="500" height="360"/>
+</div>
+
+其中 R1 的配置如下所示：
+```shell
+[R1]rip 1
+[R1-rip-1]version 2
+[R1-rip-1]network 192.168.1.0
+[R1-rip-1]network 172.16.0.0
+```
+
+在上述配置中，rip 命令用于创建一个 RIP 路由进程，而该命令后的数字 1 则为该 RIP 进程的进程 ID (Process-ID) 。**同一台设备上所运行的不同 RIP 进程相互独立，设备在一个 RIP 进程内学习到的路由缺省不会自动注入另一个 RIP 进程**。
+
+在 RIP 配置视图下执行的 version 2 命令用于指定 RIP 版本为 RIPv2。network 命令用于在指定网段的接口上激活 RIP。值得注意的是，**network 命令所指定的必须是主类网络地址，而不能是子网地址**。如果您使用 network 172.16.1.0 命令试图在 R1 的 GE0/0/2 接口上激活 RIPv2，那么系统将会报错，因为 172.16.1.0 是一个子网地址，而不是主类网络地址。
+
+R2 的配置如下所示：
+```shell
+[R2]rip 1
+[R2-rip-1]version 2
+[R2-ip-1]network 192.168.1.0
+```
+
+在 R2 上 **network 192.168.1.0** 命令将激活 GE0/0/1 和 GE0/0/2 接口上的 RIPv2 协议。
+
+R3 的配置如下所示：
+```shell
+[R3]rip 1
+[R3-rip-1]version 2
+[R3-rip-1]network 192.168.1.0
+[R3-rip-1]network 172.16.0.0
+```
+
+可以使用 **display rip 2 database** 命令查看本设备有哪些激活了 RIP，以 R1 为例：
+
+<div align="center">
+    <img src="RIP路由_static/16_rip_2_database.png" width="400" height="160"/>
+</div>
+
+在 R1 的 RIP 协议数据库中，包含了到达网络拓扑图中所有四个网段的路由。接下来，可以通过 **display rip 2 interface** 来查看 R1 路由器上哪些接口激活了 RIP 协议。
+
+<div align="center">
+    <img src="RIP路由_static/17_rip_2_interface.png" width="500" height="80"/>
+</div>
+
+可以通过上述命令同样查看 R2 与 R3 的路由信息，三台路由器都已经知晓了到达各个网段的路由。
+
+### 6.2 案例二 Silent-Interface
+
+<div align="center">
+    <img src="RIP路由_static/18_rip_silent.png" width="550" height="250"/>
+</div>
+
+如图所示，在 R1 和 R2 上都运行了 RIP 协议，并且为了让 PC 和 R2 能够互相访问通信，必须在 R1 的 GE0/0/1 接口上激活 RIPv2 协议，这样 192.168.1.0/24 网段的信息才会被 R1 放入到 Response 报文中通告给 R2。但是 GE0/0/1 接口上激活 RIPv2 协议之后，R1 也会定期从 GE0/0/1 中给两台 PC 发送 RIPv2 消息，增加了 PC 的负担。
+
+所以必须在 R1 的 GE0/0/1 接口上配置 silent-interface，配置如下：
+```shell
+[RI]rip 1
+[R1-rip-1]version 2
+[R1-rip-1]network 192.168.1.0
+[R1-rip-1]network 192.168.12.0
+[R1-rip-1]silent-interface GigabitEthernet 0/0/1
+```
+**silent-interface GigabitEthernet 0/0/1** 用于将 R1 的 GE0/0/1 接口配置为 Silent-Interface，这样 R1 就不会再从该接口发送 Response 报文。
+
+<div align="center">
+    <img src="RIP路由_static/19_rip_silent.png" width="400" height="350"/>
+</div>
+
+使用 **display rip 1** 来展示 RIP 进程 1 的全局信息。在以上输出的信息中，GE0/0/1 接口已经被配置为 Silent-Interface。值得注意的是，虽然 R1 的 GE0/0/1 接口被配置为 Silent-Interface，但是该接口由于已经激活了 RIPv2，因此 R1 从 GE0/0/2 接口发送的 Response 报文会携带到达 192.168.1.0／24 的路由信息。
+
+### 6.3 案例三 RIP 路由手工汇总
+
+<div align="center">
+    <img src="RIP路由_static/20_rip_agg.png" width="700" height="330"/>
+</div>
+
+如上图所示，**GS_R1 及 GS_R2 为两台汇聚层路由器，这两台路由器分别下联 4 个终端网段，同时还上联核心层路由器 Core**。为了让网络中的路由器都能够动态地学习到去往全网各个网段的路由，我们将在这三台路由器上部署 RIPv2。
+
+GS_R1 的配置如下所示：
+```shell
+[GS_R1]rip 1
+[GS_R1-rip-1]version 2
+[GS_R1-rip-1]network 192.168.1.0
+[GS_Rl-rip-1]network 172.16.0.0
+```
+
+在上述配置中，**network 172.16.0.0** 命令将会把 R1 的 GE0/0/0、GE0/0/2、GE0/0/3 接口都激活 RIPv2，因为这 3 个接口使用的 IP 网段是 172.16.0.0/16 内的子网。对于 Core 和 GS_R2 的配置同理。
+
+GS_R1 学习到的路由如下所示，命令只显示了 RIP 协议所学习到的路由（不包含直连的路由），即 172.16.4.0/24、172.16.5.0/24、172.16.6.0/24、192.168.1.4/30。
+
+<div align="center">
+    <img src="RIP路由_static/21_rip_agg.png" width="510" height="270"/>
+</div>
+
+GS_R2 学习到的路由如下所示：
+
+<div align="center">
+    <img src="RIP路由_static/22_rip_agg_gs_r2.png" width="510" height="270"/>
+</div>
+
+Core 学习到的路由如下所示：
+
+<div align="center">
+    <img src="RIP路由_static/23_rip_agg_core.png" width="510" height="320"/>
+</div>
+
+接下来，我们可以通过部署 RIP 路由汇总来简化网络中路由器的路由表。RIPv2 是支持路由自动汇总的，在 RIP 的配置视图下，**使用 summary 命令即可激活 RIPv2 的路由自动汇总功能，但是路由器缺省已经激活了 RIP 路由自动汇总**。可以看一下 GS_R1 的 RIP 协议信息：
+
+<div align="center">
+    <img src="RIP路由_static/24_gs_r1_rip.png" width="400" height="290"/>
+</div>
+
+不过如果接口激活了水平分割或毒性逆转，那么自动汇总功能将不会生效。这三台路由器的接口缺省已经激活了水平分割，因此在这个场景中，在这些路由器的路由表中看到的依然都是明细路由。如下图所示，**Split-Horizon:Enabled**。
+
+<div align="center">
+    <img src="RIP路由_static/25_rip_interface_verbose.png" width="400" height="180">
+</div>
+
+为了实现路由的自动汇总，接下来使用 **undo split-horizon** 命令在 GS_R1 的 GE0/0/1 接口上关闭水平分割，这样 GS_R1 就会在 GE0/0/1 接口上通告汇总路由。由于 GS_R1 位于 172.16.0.0/16 和 192.168.1.0/24 这两个主类网络的边界，因此现在当 GS_R1 向 R1 发送 Response 报文时，其中的路由为主类网络路由 172.16.0.0/16，而不是明细路由。
+
+<div align="center">
+    <img src="RIP路由_static/26_core_rip_agg.png" width="480" height="280">
+</div>
+
+从上图可以看出，Core 路由表中的到达 GS_R1 直连的 3 个网段被替换成一个汇总路由 172.16.0.0/16。但是，RIP 的防环机制依赖于水平分割，所以关闭水平分割存在一定的安全隐患。实际上，在 RIP 配置视图下，使用 **`summary always`** 命令可以使得路由器无论水平分割或毒性逆转激活与否，都执行路由自动汇总。因此，调整 GS_R1 的配置如下：
+```shell
+[GS_R1] rip 1
+[GS_R1-rip-1] summary always
+```
+
+将 GSR 2 的配置也做调整
+```shell
+[GS_R2] rip 1
+[GS_R2-rip-1] summary always
+```
+
+配置完成后，Core 路由器的路由表如下所示：
+
+<div align="center">
+    <img src="RIP路由_static/27_core_rip_summary.png" width="490" height="290">
+</div>
+
+由于 GS_R1 及 GS_R2 都向 Core 通告汇总路由 172.16.0.0/16，并且这两条路由的度量值是相等的，因此 Core 将会把这两条 RIP 路由都加载到其路由表中，此时关于该目的网段，Core 将在 GS_R1 及 GS_R2 这两个下一跳执行等价负载分担。这样可能导致报文丢失。
+
+造成这个问题的根本原因在于，RIP 自动汇总产生的路由是不精确的，汇总路由的颗粒度太大，它只能是主类网络路由。因此，可以使用手工汇总，GS-R1 所直连的 4 个终端网段，可以使用 172.16.0.0/22 将它们刚好"囊括"住。同埋，也可以使用 172.16.4.0/22 将 GS_R2 所直连的 4 个终端网段刚好"囊括"住。
+
+GS_R1 的手工路由汇总配置如下：
+```shell
+[GS_R1]interface GigabitEthernet 0/0/1
+[GS_R1-GigabitEthernet0/0/1]rip summary-address 172.16.0.0 255.255.252.0
+```
+
+GS_R2 的手工路由汇总配置如下：
+```shell
+[GS_R2]interface GigabitEthernet 0/0/1
+[GS_R2-GigabitEthernet0/0/1]rip summary-address 172.16.4.0 255.255.252.0
+```
+
+手工配置汇总之后，Core 路由器上使用 RIP 协议获取到的路由如下所示：
+
+<div align="center">
+    <img src="RIP路由_static/28_core_rip_sum2.png" width="490" height="270">
+</div>
+
+### 6.4 案例四 RIP 报文认证
+
+<div align="center">
+    <img src="RIP路由_static/29_rip_auth.png" width="440" height="380">
+</div>
+
+在上图中，R1 以及 R2 连接在一台交换机上，双方的接口均配置相同网段的 IP 地址并运行 RIPv2。在正常情况下，R1 能通过 RIP 从 R2 获知到达 192.168.2.0/24 的路由。此时网络中出现了一个攻击者 R3，R3 也接入到了交换机上，并激活 RIPv2，随后 R3 开始向交换机泛洪 Response 报文。
+
+如果 R3 也通过 RIP 向网络中通告到达 192.168.2.0/24 的路由，那么 R1 的路由表势必受到影响。**如果 R3 通告的 192.168.2.0/24 路由的度量值与 R2 所通告的该路由度量值相等，那么 R1 便会在这两个下一跳执行等价负载分担**，当其收到去往该网段的数据包时，就有可能将它们转发到 R3，从而导致业务中断或者信息泄漏。当然，如果 R3 通告的路由的跳数比 R2 的更小，那么更将刷新 R1 的路由表，导致业务彻底中断。
+
+RIPv2 支持报文认证，因此只需要在 R1 和 R2 对应的接口上激活 RIP 报文认证即可，R1 的配置如下所示：
+
+```shell
+[R1]interface GigabitEthermet 0/0/1
+[R1-GigabitEthernet0/0/1]rip authentication-mode simple xwl123
+```
+
+R2 的配置如下所示：
+
+```shell
+[R2]interface GigabitEthernet 0/0/1
+[R2-GigabitEthermet0/0/1]rip authentication-mode simple xwl123
+```
+
+在 R1 及 R2 的配置中，**`rip authentication-mode simple xwl123`** 命令用于在路由器的接口上激活 RIP 报文认证，simple 关键字表示认证的方式为简单认证，即明文认证，当使用这种认证方式时，RIP 路由器将口令 xwl123 以明文的形式在 RIP 报文中携带，如下所示。
+
+<div align="center">
+    <img src="RIP路由_static/30_rip_auth_simple.png" width="600" height="180">
+</div>
+
+另外可以使用 display 命令查看设备的配置文件时，能直接看到我们所配置的口令，以 R1 为例：
+
+<div align="center">
+    <img src="RIP路由_static/31_rip_auth.png" width="400" height="80">
+</div>
+
+在 R1 及 R2 配置了 RIP 报文认证后，两台路由器的接口将对接收的 RIP 报文进行认证，如果发现口令不匹配，那么收到的报文将被丢弃。所以，R3 发送过来的、携带着非法路由信息的 Response 报文将被直接丢弃。
+
+不过更加推荐的报文认证方式是 MD5。在接口视图下使用 **`rip authentication-mode md5`** 命令可激活基于 MD5 的 RIP 报文认证。在该条命令中，有两个关键字可供选择：usual 及 nonstandard，一般使用 usual 关键字，表示 MD5 认证报文使用通用报文格式。
+
+R1 的配置如下所示：
+```shell
+[R1]interface GigabitEthernet 0/0/1
+[R1-GigabitEthernet0/0/1]rip authentication-mode md5 usual xwl123 
+```
+R2 的接口配置修改如下：
+```shell
+[R2]interface GigabitEthernet 0/0/1
+[R2-GigabitEthernet0/0/1]rip authentication-mode md5 usual xwl123
+```
+
+这时，RIP 路由器口令在 RIP 报文中就不是以明文的形式携带，如下所示：
+
+<div align="center">
+    <img src="RIP路由_static/32_rip_auth.png" width="600" height="220">
+</div>
+
+### 6.5 案例五 配置接口的附加度量值
+
