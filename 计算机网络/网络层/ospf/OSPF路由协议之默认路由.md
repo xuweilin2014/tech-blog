@@ -103,16 +103,187 @@ OSPF 默认路由的发布原则如下：
     <img src="ospf_static/1_default_route_nssa.png" width="900" height="350"/>
 </div>
 
+#### 1.7.1 Totally NSSA 区域
+
 在上面这个拓扑图中，area0 为骨干区域，R1 和 R2 为 ABR，R7 为 ASBR；area2 被配置为 Totally NSSA 区域，R6 为 ASBR；area1 为 NSSA 区域，R4 为 ASBR。对于 area2，R1 会产生 LSA7 和 LSA3 这两种类型的默认路由泛洪到 area2 中。我们可以通过查看 R1 和 R6 的 lsdb 数据库得出：
 
 <div align="center">
     <img src="ospf_static/2_totally_nssa.png" width="530" height="150"/>
 </div>
 
-R1 的 lsdb 数据库如上所示，有 Sum-Net（3 类 LSA）和 NSSA（7 类 LSA）两种类型的默认路由在 area2 中泛洪，R6 的 lsdb 数据库如下所示：
+R1 的 lsdb 数据库如上所示，有 Sum-Net（3 类 LSA）和 NSSA（7 类 LSA）两种类型的默认路由在 area2 中泛洪，R6 的 lsdb 数据库如下所示，可以看出，在 R6 的 lsdb 数据库中，也有两种类型的默认路由。
 
 <div align="center">
     <img src="ospf_static/3_totally_nssa_ospf.png" width="540" height="200"/>
 </div>
 
-在 R6 的 lsdb 数据库中，
+但是对于 LSA3 和 LSA7 类型的默认路由，不管是 R6 还是 R8 都选择将 LSA3 通告的默认路由添加到 OSPF 的路由表中，最终添加到全局路由表中。R6 的 OSPF 路由表和全局路由表如下所示：
+
+<div align="center">
+    <img src="ospf_static/4_totally_nssa_ospf.png" width="450" height="160"/>
+</div>
+<center><p2 style="font-size:12px">OSPF 路由表</p2></center>
+
+<div align="center">
+    <img src="ospf_static/5_t_nssa_ip_route.png" width="480" height="170"/>
+</div>
+<center><p2 style="font-size:12px">全局路由表</p2></center>
+
+从上面可以看出，OSPF 路由表中优选了 LSA3 型作为路由，而在全局路由表中，由于只有 OSPF 协议通告了默认路由，因此就将此 OSPF 默认路由添加到全局路由表中。从优先级可以看出，全局路由表中的路由为 LSA3 类型的，Pre=10，而 OSPF 内部路由的优先级（LSA1、LSA2、LSA3）就为 10，而 OSPF ASE（LSA5）和 OSPF NSSA（LSA7）优先级为 150。
+
+R8 的 OSPF 路由表和全局路由表和 R6 基本一致，下面只显示全局路由表：
+
+<div align="center">
+    <img src="ospf_static/7_r8_ip_route.png" width="480" height="170"/>
+</div>
+
+但是 R1 的 OSPF 路由表和全局路由表有一些不同，由于 R1 只是泛洪 LSA3 和 LSA7 默认路由到 area2 中，因此 R1 的 lsdb 中存在这两个 LSA，但是由于 area2 中没有其它路由器向 R1 泛洪默认路由，R1 也没有将这些默认路由（LSA5 和 LSA7）宣告到 OSPF 域中，因此 R1 的 OSPF 路由表中没有默认路由，而 R1 上其它协议的路由表（静态、直连以及 RIP 等）中也没有默认路由，故全局路由表中也没有默认路由。如下所示：
+
+<div align="center">
+    <img src="ospf_static/8_r1_ospf_route.png" width="480" height="160"/>
+</div>
+<center><p2 style="font-size:12px">OSPF 路由表</p2></center>
+
+<div align="center">
+    <img src="ospf_static/9_r1_ip_route.png" width="480" height="195"/>
+</div>
+<center><p2 style="font-size:12px">全局路由表</p2></center>
+
+R1 的全局路由表和 OSPF 路由表中均没有默认路由。
+
+接下来，我们在 R6 上配置一条静态默认路由，并且将路由的优先级设置为 9（静态路由的优先级默认为 60）。如果不设置优先级的话，此条静态路由的优先级由于低于 OSPF 内部路由，不会被保存到全局路由表中，全局路由表中仍然是 OSPF 默认路由，因此按照前面所说，如果 ASBR 路由表中的默认路由还是 OSPF 类型的，即使加了 always 参数，仍然无法产生默认路由（即产生对应的 LSA 泛洪到区域中）。
+
+```java
+[Huawei]ip route-static 0.0.0.0 0 NULL0 preference 9
+[Huawei]ospf 1 
+[Huawei-ospf-1]area 2
+[Huawei-ospf-1-area-0.0.0.2]nssa default-route-advertise 
+```
+
+然后使用 `nssa default-route-advertise` 让 R6 产生一个 LSA7 泛洪到整个区域中，因此 R6 产生了 LSA7 类型的默认路由，因此 R6 不再接受 R1 产生的 LSA7 默认路由，但是会接受 LSA3 类型的默认路由添加进行 OSPF 路由表中，如下所示：
+
+<div align="center">
+    <img src="ospf_static/10_r6_ospf_route.png" width="480" height="180"/>
+</div>
+
+而我们添加到 R6 的静态路由优先级为 9，高于 OSPF 中默认路由的优先级，因此全局路由表优选静态默认路由，如下所示：
+
+<div align="center">
+    <img src="ospf_static/11_r6_ip_route_table.png" width="480" height="160"/>
+</div>
+
+最后 R6 的 lsdb 如下所示，可以看到有三个 LSA，分别是 R1 泛洪的 LSA7 和 LSA3，以及 R6 泛洪的 LSA7。
+
+<div align="center">
+    <img src="ospf_static/12_r6_lsdb.png" width="480" height="210"/>
+</div>
+
+由于 R1 泛洪了 LSA3 和 LSA7 类型的路由，因此不再接收 R6 泛洪的 LSA7 类型的路由，不会将其添加到 OSPF 路由表中，故 R1 的 OSPF 路由表中没有默认路由，全局路由表中也没有默认路由。
+
+### 1.7.2 NSSA 区域
+
+当我们将 area1 配置为 NSSA 区域时，R2 会默认发布 LSA7 类型（NSSA）的默认路由泛洪到 area1 中。R2 和 R4 的 lsdb 分别如下所示：
+
+<div align="center">
+    <img src="ospf_static/13_r2_lsdb.png" width="480" height="270"/>
+</div>
+<center><p2 style="font-size:12px">R4 LSDB</p2></center>
+
+<div align="center">
+    <img src="ospf_static/14_r2_lsdb.png" width="480" height="230"/>
+</div>
+<center><p2 style="font-size:12px">R2 LSDB</p2></center>
+
+和 Totally NSSA 的边界路由器 R1 类似的原因，R2 的 OSPF 路由表中也没有默认路由，故而全局路由表中也没有默认路由。如下所示：
+
+<div align="center">
+    <img src="ospf_static/15_r2_ospf_route.png" width="480" height="270"/>
+</div>
+<center><p2 style="font-size:12px">R2 OSPF 路由表</p2></center>
+
+<div align="center">
+    <img src="ospf_static/16_r2_ip_route_table.png" width="480" height="180"/>
+</div>
+<center><p2 style="font-size:12px">R2 全局路由表</p2></center>
+
+R4 会将泛洪的 LSA7 默认路由添加到自己 OSPF 路由表中，最终添加到自己的全局路由表里面，如下所示：
+
+<div align="center">
+    <img src="ospf_static/17_r4_ospf_route.png" width="480" height="100"/>
+</div>
+<center><p2 style="font-size:12px">R4 OSPF 路由表</p2></center>
+
+<div align="center">
+    <img src="ospf_static/16_r2_ip_route_table.png" width="480" height="180"/>
+</div>
+<center><p2 style="font-size:12px">R4 全局路由表</p2></center>
+
+现在在 R4 上配置静态默认路由，并且使用 `nssa default-route-advertise` 将此静态默认路由泛洪到 area1 中。
+
+```java
+[Huawei]ip route-static 0.0.0.0 0 NULL0
+[Huawei]ospf 1 
+[Huawei-ospf-1]area 1
+[Huawei-ospf-1-area-0.0.0.1]nssa default-route-advertise 
+```
+
+这次在 R4 上配置静态默认路由时，没有指定优先级，但是和 R1 不同的是，可以将静态默认路由泛洪到 area1 中，这是因为静态路由的优先级为 60，高于 OSPF NSSA 路由的优先级 150，因此会被优选到 R4 全局路由表中，并通过 `nssa default-route-advertise` 命令进行泛洪。另外，由于 R4 也泛洪了 LSA7 类型的默认路由，它不会再接收 R1 的 LSA7 默认路由，故 R4 的 OSPF 路由表中不会再有默认路由，如下所示：
+
+<div align="center">
+    <img src="ospf_static/19_r4_ospf_route_ad.png" width="480" height="260"/>
+</div>
+<center><p2 style="font-size:12px">R4 OSPF 路由表</p2></center>
+
+<div align="center">
+    <img src="ospf_static/20_r4_ospf_ip_route_table.png" width="480" height="180"/>
+</div>
+<center><p2 style="font-size:12px">R4 全局路由表</p2></center>
+
+R5 会同时接收到 R2 和 R4 泛洪的 LSA7 类型默认路由，并且进行负载均衡，下面是 R5 的 OSPF 路由表，有两条默认路由。
+
+<div align="center">
+    <img src="ospf_static/21_r5_ospf_route.png" width="480" height="115"/>
+</div>
+
+R5 的全局路由表如下所示，对默认路由 0.0.0.0/0 进行了负载均衡。
+
+<div align="center">
+    <img src="ospf_static/22_r5_ip_route_table.png" width="500" height="195"/>
+</div>
+
+由于 R2 发布了 LSA7 类型的默认路由，因此，R2 不接受 R4 发布的默认路由，故 R2 的 OSPF 路由表和全局路由表还是没有默认路由。
+
+#### 1.7.3 骨干和普通区域默认路由
+
+area0 为骨干区域，在骨干区域的路由器（ASBR 或者普通路由器）都可以通过 `default-route-advertise` 泛洪 LSA5 默认路由。
+
+```java
+[Huawei]ospf 1
+[Huawei-ospf-1]area 0
+[Huawei-ospf-1-area-0.0.0.0]default-route-advertise always
+```
+
+在输入上述命令之后，R3 中 lsdb 如下所示，确定 R3 使用 LSA5 来发送默认路由。
+
+<div align="center">
+    <img src="ospf_static/23_r3_lsdb.png" width="480" height="60"/>
+</div>
+
+但是和 area2 中 R1 相同的原因，R1 的 OSPF 路由表和全局路由表都没有默认路由。另外，R1 的 lsdb 如下所示，R1 也收到了 R3 泛洪的 LSA5 默认路由，并且添加到 OSPF 路由表和全局路由表中。
+
+<div align="center">
+    <img src="ospf_static/24_r1_lsdb.png" width="480" height="220"/>
+</div>
+<center><p2 style="font-size:12px">R1 LSDB</p2></center>
+
+<div align="center">
+    <img src="ospf_static/25_r1_ospf_route.png" width="480" height="90"/>
+</div>
+<center><p2 style="font-size:12px">R1 OSPF route</p2></center>
+
+<div align="center">
+    <img src="ospf_static/26_r1_ip_route_table.png" width="480" height="180"/>
+</div>
+<center><p2 style="font-size:12px">R1 全局路由表</p2></center>
+
+R2 与 R7 的 lsdb、OSPF 路由表以及全局路由表均与 R1 一致，这里不再赘述。
