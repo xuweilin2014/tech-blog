@@ -284,6 +284,6 @@ area0 为骨干区域，在骨干区域的路由器（ASBR 或者普通路由器
 <div align="center">
     <img src="ospf_static/26_r1_ip_route_table.png" width="480" height="180"/>
 </div>
-<p style="font-size:12px;text-align:center">R1 全局路由表</p>
+<p style="font-size:12px" align="center">R1 全局路由表</p>
 
 R2 与 R7 的 lsdb、OSPF 路由表以及全局路由表均与 R1 一致，这里不再赘述。
