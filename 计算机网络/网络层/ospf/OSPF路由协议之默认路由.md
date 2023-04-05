@@ -122,12 +122,12 @@ R1 的 lsdb 数据库如上所示，有 Sum-Net（3 类 LSA）和 NSSA（7 类 L
 <div align="center">
     <img src="ospf_static/4_totally_nssa_ospf.png" width="450" height="160"/>
 </div>
-<center><p2 style="font-size:12px">OSPF 路由表</p2></center>
+<p style="font-size:12px;text-align:center">OSPF 路由表</p>
 
 <div align="center">
     <img src="ospf_static/5_t_nssa_ip_route.png" width="480" height="170"/>
 </div>
-<center><p2 style="font-size:12px">全局路由表</p2></center>
+<p style="font-size:12px;text-align:center">全局路由表</p>
 
 从上面可以看出，OSPF 路由表中优选了 LSA3 型作为路由，而在全局路由表中，由于只有 OSPF 协议通告了默认路由，因此就将此 OSPF 默认路由添加到全局路由表中。从优先级可以看出，全局路由表中的路由为 LSA3 类型的，Pre=10，而 OSPF 内部路由的优先级（LSA1、LSA2、LSA3）就为 10，而 OSPF ASE（LSA5）和 OSPF NSSA（LSA7）优先级为 150。
 
@@ -142,12 +142,12 @@ R8 的 OSPF 路由表和全局路由表和 R6 基本一致，下面只显示全�
 <div align="center">
     <img src="ospf_static/8_r1_ospf_route.png" width="480" height="160"/>
 </div>
-<center><p2 style="font-size:12px">OSPF 路由表</p2></center>
+<p2 style="font-size:12px">OSPF 路由表</p2>
 
 <div align="center">
     <img src="ospf_static/9_r1_ip_route.png" width="480" height="195"/>
 </div>
-<center><p2 style="font-size:12px">全局路由表</p2></center>
+<p2 style="font-size:12px">全局路由表</p2>
 
 R1 的全局路由表和 OSPF 路由表中均没有默认路由。
 
@@ -187,36 +187,36 @@ R1 的全局路由表和 OSPF 路由表中均没有默认路由。
 <div align="center">
     <img src="ospf_static/13_r2_lsdb.png" width="480" height="270"/>
 </div>
-<center><p2 style="font-size:12px">R4 LSDB</p2></center>
+<p style="font-size:12px;text-align:center">R4 LSDB</p>
 
 <div align="center">
     <img src="ospf_static/14_r2_lsdb.png" width="480" height="230"/>
 </div>
-<center><p2 style="font-size:12px">R2 LSDB</p2></center>
+<p style="font-size:12px;text-align:center">R2 LSDB</p>
 
 和 Totally NSSA 的边界路由器 R1 类似的原因，R2 的 OSPF 路由表中也没有默认路由，故而全局路由表中也没有默认路由。如下所示：
 
 <div align="center">
     <img src="ospf_static/15_r2_ospf_route.png" width="480" height="270"/>
 </div>
-<center><p2 style="font-size:12px">R2 OSPF 路由表</p2></center>
+<p style="font-size:12px;text-align:center">R2 OSPF 路由表</p>
 
 <div align="center">
     <img src="ospf_static/16_r2_ip_route_table.png" width="480" height="180"/>
 </div>
-<center><p2 style="font-size:12px">R2 全局路由表</p2></center>
+<p style="font-size:12px;text-align:center">R2 全局路由表</p>
 
 R4 会将泛洪的 LSA7 默认路由添加到自己 OSPF 路由表中，最终添加到自己的全局路由表里面，如下所示：
 
 <div align="center">
     <img src="ospf_static/17_r4_ospf_route.png" width="480" height="100"/>
 </div>
-<center><p2 style="font-size:12px">R4 OSPF 路由表</p2></center>
+<p style="font-size:12px;text-align:center">R4 OSPF 路由表</p>
 
 <div align="center">
     <img src="ospf_static/16_r2_ip_route_table.png" width="480" height="180"/>
 </div>
-<center><p2 style="font-size:12px">R4 全局路由表</p2></center>
+<p style="font-size:12px;text-align:center">R4 全局路由表</p>
 
 现在在 R4 上配置静态默认路由，并且使用 `nssa default-route-advertise` 将此静态默认路由泛洪到 area1 中。
 
@@ -232,12 +232,12 @@ R4 会将泛洪的 LSA7 默认路由添加到自己 OSPF 路由表中，最终�
 <div align="center">
     <img src="ospf_static/19_r4_ospf_route_ad.png" width="480" height="260"/>
 </div>
-<center><p2 style="font-size:12px">R4 OSPF 路由表</p2></center>
+<p style="font-size:12px;text-align:center">R4 OSPF 路由表</p>
 
 <div align="center">
     <img src="ospf_static/20_r4_ospf_ip_route_table.png" width="480" height="180"/>
 </div>
-<center><p2 style="font-size:12px">R4 全局路由表</p2></center>
+<p style="font-size:12px;text-align:center">R4 全局路由表</p>
 
 R5 会同时接收到 R2 和 R4 泛洪的 LSA7 类型默认路由，并且进行负载均衡，下面是 R5 的 OSPF 路由表，有两条默认路由。
 
@@ -274,16 +274,16 @@ area0 为骨干区域，在骨干区域的路由器（ASBR 或者普通路由器
 <div align="center">
     <img src="ospf_static/24_r1_lsdb.png" width="480" height="220"/>
 </div>
-<center><p2 style="font-size:12px">R1 LSDB</p2></center>
+<p style="font-size:12px;text-align:center">R1 LSDB</p>
 
 <div align="center">
     <img src="ospf_static/25_r1_ospf_route.png" width="480" height="90"/>
 </div>
-<center><p2 style="font-size:12px">R1 OSPF route</p2></center>
+<p style="font-size:12px;text-align:center">R1 OSPF route</p>
 
 <div align="center">
     <img src="ospf_static/26_r1_ip_route_table.png" width="480" height="180"/>
 </div>
-<center><p2 style="font-size:12px">R1 全局路由表</p2></center>
+<p style="font-size:12px;text-align:center">R1 全局路由表</p>
 
 R2 与 R7 的 lsdb、OSPF 路由表以及全局路由表均与 R1 一致，这里不再赘述。
