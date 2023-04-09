@@ -376,3 +376,11 @@ filter import 和 export 的区别在于，import 在路由进入某区域时执
 </div>
 
 如上图，使 ABR R2 仅向其他区域通告 10.1.4.4/32 和 10.1.4.5/32 路由。如果在 R2 上配置 filter-import，那么仅仅在 4.6/32 路由进入 area0 时会进行过滤，而 area2 中还是会存在。如果在 R2 上配置 filter-export，那么当 4.6/32 离开 area1 时，就会被过滤掉，那么 area0 和 area2 都不会接收到 4.6/32，达到了目的。
+
+最后，对于最开始的 topo 图（非 2.2.6 中的 topo 图）可以总结如下：
+
+- R2 上配置 filter-policy import 可以过滤外部路由 LSA5
+- R3 上使用 filter-policy import 无法过滤掉 LSA5
+- R2 上配置 filter-policy export 无法过滤掉 LSA5 路由
+- R1 上配置 filter-policy import 无法过滤外部路由 LSA7 
+- R1，R2 上配置 asbr-summary not advertise 可以过滤外部路由
