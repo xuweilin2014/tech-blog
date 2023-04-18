@@ -157,3 +157,25 @@ R4 的 OSPF lsdb 如下所示，可以看到，在 Area1 中 192.168.13.0 Sum-Ne
 **2）增加骨干区域的可靠性**
 
 R3 和 R4 间在 Area1 上创建 vlink，还可以用于提高 Area0 的健壮性，避免 R1 和 R2 之间链路断开而导致的 Area0 分裂。
+
+### 2.3 Vlink 特性
+
+#### 2.3.1 特性 1
+
+vlink 上可传递 LSA1/2/3/4 类型的 LSA，其他类型不传递。**LSA5 是在整个 OSPF 路由域中泛洪的 LSA，它可以直接在区域间泛洪**，**_vlink_** 不传递 LSA5。我们以 Vlink 实例 2 中的 topo 图为例，但是做两处更改，首先将 192.168.1.1/32 作为外部路由引入；其次取消 R2 与 R5 之间的 vlink 连接。此时，R6 上的 OSPF lsdb 如下所示：
+
+<div align="center">
+    <img src="ospf_static/96.png" width="450"/>
+</div>
+
+可以看到，LSA5 可以直接在区域间泛洪，这是因为 LSA5 没有任何防环措施，LSA5 防环主要依赖 LSA3 和 LSA4 完成。所以 R5 虽然不是 ABR，但是 LSA5 依然可以在 Area2 中泛洪。因此若 Area0 中有 LSA5，其可以直接经 Area1 泛洪到 R6， 没必要再经 Vlink 泛洪一次。
+
+#### 2.3.2 特性 2
+
+vlink 是工作在 Transit Area 上的连接两个 ABR 的虚拟链路，该虚链路属于区域 0，其 OSPF 链路成本为 Transit Area 内两个 ABR 节点间的最优路径的成本。
+
+#### 2.3.3 特性 3
+
+vlink 有正常的 OSPF 邻居关系，周期性发送 Hello 及 LSA 刷新，如果连续失去四个 Hello 报文，则 Vlink 邻居关系 Down,这和直连链路上判定邻居失效的方式一致。但若两个 ABR 路由器物理直连，VIik 建立后，物理链路断开或邻居断开，都会致 Vlink 立即中断。
+Vlink 仅用来传递 LSA, Vlink 并不传递数据。区域间的数据传输要经过 Transit Area 内的最优路径，这个路径由 ABR 根据 Transit Area 中的 LSA3 计算决定，ABR 先通过 Vlink 了解到 Area0 中的网络，再根据 Transit Area (Areal) 中的通告相应网络的 LSA3 确定访问 Area0 中该网络的路径。
+图 3-43 中，Vlink 邻居建立起来后，R3 也是连接 Area0 的 ABR, R2 和 R3 会在其 Area0 中的 Router LSA 中添加 Type4 类型的 Link。
