@@ -176,6 +176,120 @@ vlink 是工作在 Transit Area 上的连接两个 ABR 的虚拟链路，该虚�
 
 #### 2.3.3 特性 3
 
-vlink 有正常的 OSPF 邻居关系，周期性发送 Hello 及 LSA 刷新，如果连续失去四个 Hello 报文，则 Vlink 邻居关系 Down,这和直连链路上判定邻居失效的方式一致。但若两个 ABR 路由器物理直连，VIik 建立后，物理链路断开或邻居断开，都会致 Vlink 立即中断。
-Vlink 仅用来传递 LSA, Vlink 并不传递数据。区域间的数据传输要经过 Transit Area 内的最优路径，这个路径由 ABR 根据 Transit Area 中的 LSA3 计算决定，ABR 先通过 Vlink 了解到 Area0 中的网络，再根据 Transit Area (Areal) 中的通告相应网络的 LSA3 确定访问 Area0 中该网络的路径。
-图 3-43 中，Vlink 邻居建立起来后，R3 也是连接 Area0 的 ABR, R2 和 R3 会在其 Area0 中的 Router LSA 中添加 Type4 类型的 Link。
+vlink 有正常的 OSPF 邻居关系，周期性发送 Hello 及 LSA 刷新，如果连续失去四个 Hello 报文，则 vlink 邻居关系 Down，这和直连链路上判定邻居失效的方式一致。但若两个 ABR 路由器物理直连（之前说的情况可能 ABR 路由器之间不为直连），vlink 建立后，物理链路断开或邻居断开，都会致 vlink 立即中断。
+
+#### 2.3.4 特性 4
+
+vlink 仅用来传递 LSA，vlink 并不传递数据（vlink 是一个虚拟连接）。区域间的数据传输要经过 Transit Area 内的最优路径，这个路径由 ABR 根据 Transit Area 中的 LSA3 计算决定，ABR 先通过 vlink 了解到 Area0 中的网络，再根据 Transit Area (Area1) 中的通告相应网络的 LSA3 确定访问 Area0 中该网络的路径。
+
+### 2.4 Vlink 的缺陷
+
+### 2.4.1 Vlink 设计不当，会导致网络出现环路
+
+<div align="center">
+    <img src="ospf_static/97.png" width="1000"/>
+</div>
+
+我们使用如上的 topo 图来进行实验，分析 R1 与 R7 之间流量互相访问的情况，先分析没有在 R3 与 R6 之间建立 vlink 的情况。
+
+**（1）没有创建 vlink 连接之前**
+
+OSPF 区域结构要求非 0 区域必须连接骨干区域，上图中，Area0 被分割为两处，192.168.1.1/32 路由经 ABR 路由器（R2 和 R3）进入 Area1，R5 和 R6 连接 Area0，根据规则，**R5 和 R6 由于有 Area0 的 OSPF 邻居，所以不接收非骨干区域学到的 LSA3 路由 192.168.1.1/32**。区域间的 LSA3 不会流向右侧 Area0，所以右侧 Area0 中没有该路由。如果不做 vlink，全网左右两侧的 Area0 不能互访。
+
+R1 上的 OSPF lsdb 如下所示，可以看到只有左侧 Area0 中泛洪的 LSA1 和 LSA2，以及 Area1 泛洪过来的 LSA3，没有右侧 Area0 的路由信息，所以左右两侧处于被分割的状态，无法进行通信。
+
+<div align="center">
+    <img src="ospf_static/98.png"/>
+</div>
+
+R1 上的 OSPF 路由表如下所示：
+
+<div align="center">
+    <img src="ospf_static/99.png"/>
+</div>
+
+R5 和 R6 不接收非骨干区域的 LSA3 路由，若在 R5 和／或 R6 上配置 vlink 后，R5／R6 可以通过 vlink 学到骨干区域泛洪过来的路由（vlink 属于区域 0），再根据 Area1 中泛洪的 LSA3 路由计算访问路径。
+
+**（2）在 R3 和 R6 之间建立 vlink 连接后**
+
+在介绍 R3 与 R6 之间建立 vlink 连接之前，先明确以下三点：
+
+1. ABR 只要在 Area0 有邻接，其不收 Area1 中的 LSA3 路由，使用 Area0 中置 V 的路由器作为访问其他非直连区域的出口。**但如果 ABR 是 vlink 的端点，则其可以根据 Area1 中的 LSA3 计算到骨干区域路由**，也就是此 ABR 可以根据非骨干区域中的 LSA3 来计算 OSPF 路由。
+
+2. vlink 在 R3 和 R6 间建立，但数据转发不代表一定要经过 R3 和 R6 路径，控制平面和数据平面是分开的。
+
+3. ABR 路由器是否向另外一个区域（假设为 Area1）泛洪 LSA3 路由，不仅仅看 OSPF 路由表中是否有路由，还需要看此路由的下一跳地址，如果下一跳地址就在 Area1 中，那么不会向 Area1 中泛洪 LSA3。
+
+<div align="center">
+    <img src="ospf_static/97.png" width="1000"/>
+</div>
+
+#### 讨论 R1 访问 R7 的去程流量（192.168.1.1 -> 192.168.7.7）
+
+首先如前所述，R3 变为 vlink 的端点之后，就可以根据非骨干区域（Area1）中的 LSA3 来计算到右侧 Area0 区域的路由。R3 的 OSPF 路由表如下所示，可以看到有到右侧 Area0 的路由。
+
+<div align="center">
+    <img src="ospf_static/100.png" width="450"/>
+</div>
+
+R3 的 OSPF lsdb 如下所示（Area1），主要关注 Summary-Net，其中 192.168.67.0 网段只有 R2、R5 和 R6，这是因为 R3 去往 67.0 网段的下一跳为 192.168.34.4，本身位于 Area1 中，所以不会向 Area1 泛洪 67.0 网段路由。同理，192.168.57.0 网段只有 R2 和 R5 向 Area1 中泛洪 LSA3，这是因为 R3 去往 57.0 网段的下一跳为 192.168.34.4，R6 去往 57.0 网段的下一跳为 192.168.56.5，均位于 Area1 中，所以不会向 Area1 泛洪。
+
+<div align="center">
+    <img src="ospf_static/101.png" width="450"/>
+</div>
+
+R3 的 OSPF lsdb（Area0）部分如下所示，可以看到，R3 和 R6 之间建立好 vlink 连接之后，R1、R2、R3、R5、R6、R7 都属于 Area0，在骨干区域中泛洪 LSA1（Router LSA），以及 4 条 LSA2（Network LSA）。
+
+<div align="center">
+    <img src="ospf_static/102.png" width="450"/>
+</div>
+
+但是 R2 不是 vlink 端点，因此不能接收非骨干区域中的 LSA3，因此只能根据 Area0 中泛洪的 LSA1 和 LSA2 来确定去往 192.167.7.7 的下一跳地址。R2 的 OSPF 路由表如下，去往 7.7 的下一跳为 192.168.12.1.
+
+<div align="center">
+    <img src="ospf_static/103.png" width="450"/>
+</div>
+
+因此，R1 通过 R3 通告的置 V-bit 的 Router LSA，R1 把访问远端 Area0 的数据包路由到 R3。
+
+R1 访问 R7 上网络，数据包仍然要路由到下一跳 R3。R3 是 ABR，它有 Area0（R1 所在 Area0 和 R7 所在 Area0）的全部 LSA 及 TransitArea (Area1) 的 LSA，所以它在计算访问路径时考虑 Area0 和 Area1 中 LSA，R3 根据 R5 和 R6 通告的 LSA3(192.168.7.7)，其路由成本分别是 2 和 11，再结合 Area1 中的拓扑计算，R3 到 R5 的最短路径为 11，R3 到 R6 的最短路径为 12。因此 R3 到 192.168.7.7 的端到端最优路径是经 R5 的 R3-R4-R5-R7，这样数据包被 R3 路由到 R4。
+
+R4 选路根据区域间的到 192.168.7.7/32 的 LSA3，根据最小成本选择 R5 作为下一跳。综上，R1 访问 R7 数据包的转发路径是 R1-R3-R4-R5-R7。
+
+#### 讨论 R7 访问 R1 的回程流量（192.168.7.7 -> 192.168.1.1）
+
+R7 处在 Area0 内，计算到 Area0 中 R1 上的网络，路由指向 V 置位的 ABR R6。原因一样，R5 不为 vlink 的端点，因此不能接收非骨干区域中的路由 LSA3，R5 在 Area0 中的 OSPF lsdb 如下所示：
+
+<div align="center">
+    <img src="ospf_static/104.png" width="450"/>
+</div>
+
+R5 在 Area1 中的 OSPF lsdb 如下所示：
+
+<div align="center">
+    <img src="ospf_static/105.png" width="450"/>
+</div>
+
+R5 只选择 Area0 中的 Router LSA 来计算到达 192.168.1.1 的路由，其 OSPF 路由表如下所示，去往 192.168.1.1 的下一跳为 192.168.57.7，转发给 R7。
+
+<div align="center">
+    <img src="ospf_static/106.png" width="450"/>
+</div>
+
+R6 是 ABR，通过 vlink 学到包含 192.168.1.1/32 的 LSA1，R6 到达这个目的路由必然通过 Transit Area（Area1），所以同上面去程的分析过程类似，R6 计算路径，同时考虑 Area0 和 Areal，数据转发路径是成本最小的路径，得出的回程路径是成本最小的端到端路径 R6->R5->R4->R2->R1。这里就形成了环路，因为 R5 在收到去往 192.168.1.1 的数据包时，会转发给 R7，R7 又会转发给 R6，形成了 R7->R6->R5->R7 的环路。
+
+### 2.4.2 Vlink 使 Transit Area 不能对 Area0 路由做聚合
+
+<div align="center">
+    <img src="ospf_static/107.png" width="550"/>
+</div>
+
+Area0 中的路由通过 ABR R2 通告到 Area1 中，为减少 Area1 中路由的数量，在边界 ABR R2 上做路由的聚合。但由于在 Area1（Transit Area）上创建 vlink 后，R2 无法再对骨干区域路由做聚合，原因是为了避免在 Transit Area 内出现路由环路。
+
+原因说明：
+
+如果能聚合成功的话，在上面的 topo 图中，Area1 的边界路由器 R2 执行聚合，产生 LSA3（包含路由 10.0.0.0/8），R4 执行路由聚合，产生 LSA3（包含路由 10.1.0.0/16），Area1 的网络结构是一个线性的网络，R3 上会收到 R2 和 R4 通告的聚合路由，所以 R3 上 10.0.0.0/8 路由下一跳指向 R2，而 10.1.0.0/16 路由下一跳指向 R4。
+
+若 R3 收到访问 10.1.3.1 的数据包，R3 路由报文到 R4（最长前缀匹配），R4 上有 vlink，所以 Area0 中会泛洪 R1、R2、R4 的 Router LSA。**因此路由表中有到达 10.1.1.0/24、10.1.2.0/24、10.1.3.0/24 的 Area0 的路由并指向 R3（在 Transit Area 中的数据传输只能通过 R4->R3->R2 这一条路径），R4 会送流量到 R3，R3 会送流量到 R4，路由环路出现**。
+
+若 vlink 邻居不存在，则 R4 不是 ABR，不能执行路由聚合，仅 R2 上可以执行路由聚合，环路不会发生。
