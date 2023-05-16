@@ -275,8 +275,8 @@ class _Condition(_Verbose):
                     ...
                     try:
                         # 3.3，如果因为超时，而不是被唤醒，退出的 wait()，那么将锁从 waiting 池中移除
-                        # 如果 timeout 不为 None，就说明不需要一直阻塞在 lock 上，只需要阻塞特定的时间段即可，那么也就不需要被 notify
-                        # 唤醒，因此可以将 waiter 从 __waiters 集合中移除。gotit 为 True，说明已经有线程调用 notify 来 release 和此 waiter，
+                        # 如果 timeout 不为 None，就说明不需要一直阻塞在 waiter.lock 上，只需要阻塞特定的时间段即可，那么也就不需要被 notify
+                        # 唤醒，因此可以将 waiter 从 __waiters 集合中移除。gotit 为 True，说明已经有线程调用 notify 来 release 此 waiter，
                         # 后续肯定也会将此 waiter 从 __waiters 集合中移除，这里不再需要重复移除，但是如果 gotit 为 False，则需要自己手动移除，
                         # 但是注意，他有可能会和下面的 notify() 函数同时尝试从 __waiters 集合中删除 waiter，报错的话 pass 就行
                         self.__waiters.remove(waiter)
@@ -316,3 +316,5 @@ class _Condition(_Verbose):
     notify_all = notifyAll
 ```
 
+总结来说，通过调用条件变量 condition 的 wait 方法，可以让多个线程阻塞在 condition 上，在 wait 阻塞的过程中，每一个线程会创建一个 waiter 锁，先获取此 waiter 锁一次，然后将此 waiter 添加到 __waiters 集合中。然后再释放底层锁，让其它线程也可以调用 condition 的 wait 和 notify 方法。释放底层锁之后，线程会再次调用 waiter 的 acquire 方法直接阻塞。然后其它线程可以调用 notify 方法，
+遍历 __waiters 集合，唤醒阻塞在每一个 waiter 上的线程。但是其它线程被唤醒之后，还得通过 _acquire_restore 重新获取底层锁，否则不能继续往下执行。
