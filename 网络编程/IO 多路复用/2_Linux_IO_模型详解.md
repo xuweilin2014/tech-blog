@@ -135,9 +135,3 @@ I/O multiplexing 就是我们说的 select，poll，epoll，有些地方也称�
 </div>
 
 根据上述定义，**我们的前 4 种模型——阻塞式 I/O 模型、非阻塞式 I/O 模型、I/O 复用模型和信号驱动式 I/O 模型都是同步 I/O 模型， 因为其中真正的 I/O 操作 (recvfrom) 将阻塞进程**。只有异步 I/O 模型与 POSIX 定义的异步 I/O 相匹配。
-
-socket select
-socket close
-socket shutdown
-socket send/recv
-socket read/write

@@ -308,10 +308,320 @@ Unix 系统关机时，init 进程通常先给所有进程发送 SIGTERM 信号�
 
 ### 7.总结
 
-- 服务器 accept 前，客户端与服务器端的连接被关闭，这时服务器端会抛出 ECONNABORTED，此 errno 可以直接被忽略，服务器端再次调用 accept 函数即可
-- 服务器端进程终止/崩溃，或者服务器被关机时，服务器中对应被关闭的套接字会发送 FIN 报文给客户端，客户端接收到 FIN 报文后（read 函数返回 0），可以继续向服务端发送数据，第一次发送，服务端会响应 RST 报文；第二次发送数据，客户端内核会产生 ECONNRESET 错误
+- 服务器 accept 前，客户端与服务器端的连接被关闭，这时服务器端会抛出 __`ECONNABORTED`__，此 errno 可以直接被忽略，服务器端再次调用 accept 函数即可
+- 服务器端进程终止/崩溃，或者服务器被关机时，服务器中对应被关闭的套接字会发送 FIN 报文给客户端，客户端接收到 FIN 报文后（read 函数返回 0），可以继续向服务端发送数据，第一次发送，服务端会响应 RST 报文，客户端可能会产生 __`ECONNRESET`__ 错误；第二次发送，客户端内核可能直接产生 __`SIGPIPE`__ 错误。
 - 服务器崩溃、崩溃后重启或者网络不可达时，对应套接字不会发送 FIN 报文（或者发送但是客户端接收不到），客户端不知道服务器已经崩溃，客户端向服务器发送消息然后调用阻塞在 read 函数上读取响应，这时会有以下 3 种情况：
-    - 如果是因为服务器已经崩溃，对客户端没有任何响应，则产生 `ETIMEDOUT` 错误；
-    - 如果因为网络不可达，中间路由器向客户端产生目标不可达的 ICMP 报文，那么产生 `ENETUNREACH` 或者 `EHOSTUNREACH` 错误；
-    - 如果服务器崩溃后重启，服务器会返回 RST 响应给客户端，产生 `ECONNRESET` 错误；
+    - 如果是因为服务器已经崩溃，对客户端没有任何响应，则产生 __`ETIMEDOUT`__ 错误；
+    - 如果因为网络不可达，中间路由器向客户端产生目标不可达的 ICMP 报文，那么产生 __`ENETUNREACH`__ 或者 __`EHOSTUNREACH`__ 错误；
+    - 如果服务器崩溃后重启之后，客户端向其发送数据，服务器会返回 RST 响应给客户端，产生 __`ECONNRESET`__ 错误；
 
+## 五、实例分析
+
+### 1.SIGPIPE 信号讲解
+
+#### 1.1 进程间通信
+
+在计算机科学中，进程间通信 (IPC) 特指操作系统提供的允许进程共享数据的机制。进程间通信有多种方式，比如文件、信号、管道、共享内存和 Socket 等。这篇文章涉及到的进程间通信方式主要有信号，管道和 Socket 三种。
+
+#### 1.2 信号（Signal）
+
+信号就是向一个进程或同一进程中的特定线程发送的异步通知，以通知它一个事件。大多数信号可以被忽略、阻止或处理（通过指定的代码），SIGSTOP（暂停）和 SIGKILL（立即终止）是两个例外。__信号常量是有整数值的，比如 SIGKILL 的整数值为 9__。下面介绍常用的信号：
+
+- SIGINT：__当用户按下了<Ctrl+C>组合键时__，用户终端向正在运行中的由该终端启动的程序发出此信号。默认动作为终止进程。
+- SIGQUIT：__当用户按下<ctrl+\\>组合键时产生该信号__，用户终端向正在运行中的由该终端启动的程序发出些信号。默认动作为终止进程。
+- SIGKILL：无条件终止进程。__本信号不能被忽略，处理和阻塞__。默认动作为终止进程。它向系统管理员提供了可以杀死任何进程的方法。
+- SIGTERM：程序结束信号，与 SIGKILL 不同的是，__该信号可以被阻塞和终止__。通常用来要示程序正常退出。执行 shell 命令 Kill 时，缺省产生这个信号。默认动作为终止进程。
+- SIGSTOP：停止进程的执行。__信号不能被忽略，处理和阻塞__。默认动作为暂停进程。
+
+再比如我们经常用 kill 系统函数来向指定进程发送信号：
+
+```c
+int kill(pid_t pid, int signum); /* declaration */
+```
+
+kill 命令的第二个参数就是一个标准的信号，如 SIGTERM 或 SIGKILL。当然也可以指定其他信号，比如 SIGUSR1 和 SIGUSR2，**这两个信号被用来告诉进程有一个用户定义的事件发生了，具体做什么取决于进程如何处理发送过来的信号，不一定是杀掉进程**，比如在 MongoDB 中，运行下边的命令就是告诉 MongoDB 该进行 log rotation 了。
+
+```shell
+kill -SIGUSR1 MONGODPID
+```
+
+当信号发出时，操作系统会中断目标进程的正常执行流程进而完成信号传递。进程可以在任何非原子指令期间被中断，如果进程之前已经注册了一个对这个信号的处理程序，则执行该程序，否则就执行默认的信号处理程序。
+
+信号处理程序可以通过 signal(2) 或 sigaction(2) 这两个系统调用来设置，现在 sigaction()函数取代了 signal() 函数，应优先使用。在设置信号处理程序的时候还可以用这两个特殊的值：
+
+- __SIG_IGN: 忽略信号（ignore）__
+- __SIG_DFL: 和使用默认信号处理程序（default）__
+
+#### 1.3 管道（Pipe）
+
+管道是基于消息传递实现的，将一组进程的标准流链在一起，这样每个进程的输出（stdout）直接作为输入（stdin）传递给下一个进程。它们是并发执行的，也就是说后边的进程可以在前一个进程running 的时候被启动，直观来说：
+
+```shell
+process1 | process2 | process3
+```
+
+我们经常用到管道，比如要列出当前目录下的文件(ls)，只保留 ls 输出中包含字符串 "key" 的行(grep)，并在滚动页面中查看结果 (less)：
+
+<div align="center">
+    <img src="6_Socket_服务器编程难点/3.png" width="300"/>
+</div>
+
+```shell
+ls -l | grep key | less
+```
+
+#### 1.4 SIGPIPE 信号
+
+说了这么多前置知识，我们现在来看看本文的主角—— SIGPIPE 信号：
+
+> The SIGPIPE signal is sent to a process when it attempts to write to a pipe without a process connected to the other end.
+
+当一个进程试图向一个管道写入时，如果没有一个进程连接到另一端，则会向该尝试写入的进程发送 SIGPIPE 信号。__也就是说当一个进程试图向一个读端已经关闭的管道写入时，就会收到这个信号__，而收到这个信号的默认操作是终止进程。
+
+假设有一个管道：
+
+```shell
+process1 | process2
+```
+
+如果 process2 已经死掉了，理应通知 process1 一下，不能让他在那一直做无用功，至于收到信号process1 怎么处理就是它自己的事了。举个例子：
+
+```shell
+yes | head -n 1
+```
+
+yes 命令的作用是将无限的 "y" 序列写入 STDOUT，而 head 则将其从管道的另一端读为 STDIN。head 读取第一行，然后退出，只要 head 终止，管道的接收端就关闭了。因此，Linux 内核会向 yes 进程发送 SIGPIPE 信号，表示没有 reader 了，然后 yes 进程就会终止。
+
+不只是对于管道，Socket 也有这个机制：
+
+> When a process writes to a socket that has received an RST, the SIGPIPE signal is sent to the process. The default action of this signal is to terminate the process, so the process must catch the signal to avoid being involuntarily terminated.
+
+如果向一个收到 RST 的 Socket 继续发送数据，则会收到 SIGPIPE 信号。
+
+先来回忆一下 RST 数据包，当一个意外的 TCP 数据包到达主机时，该主机通常会通过在同一连接上发送一个 RST 数据包来进行响应。RST 数据包就是一个没有有效载荷，并且在 TCP 头标志中设置了RST位的数据包。常见的意外的 TCP 数据包有：
+
+- __SYN 数据包，试图建立连接到一个没有进程监听的服务器端口__
+- 数据包到达之前建立的 TCP 连接上，但本地应用程序已经关闭了它的套接字或退出，操作系统关闭了套接字
+
+### 2.管道的 SIGPIPE
+
+#### 2.1 管道的读端全部关闭
+
+如果所有指向管道读端的文件描述符都关闭了（管道读端引用计数为 0），这时有进程向管道的写端 write，那么该进程会收到信号 SIGPIPE，通常会导致进程异常终止。当然也可以对 SIGPIPE 信号实施捕捉，不终止进程。具体代码如下所示：
+
+```c{.line-numbers}
+int main() {
+    int ret;
+    int fd[2];
+    pid_t pid;
+
+    char *str = "hello pipe\n";
+    char buf[1024];
+
+    ret = pipe(fd);
+    if (ret == -1) {
+        perror("pipe error");
+        exit(1);
+    }
+
+    pid = fork();
+    if (pid > 0) {
+        // 关闭父进程管道的读端 fd[0]
+        close(fd[0]);
+        sleep(3);
+        write(fd[1], str, strlen(str));
+        if (errno == EPIPE) {
+            printf("epipe\n");
+        }
+        close(fd[1]);
+    } else if (pid == 0){
+        // 关闭子进程管道的读端 fd[0]
+        close(fd[0]);
+    }
+
+    return 0;
+}
+```
+
+当父进程 fork 出子进程时，父子进程与管道读写端的描述符如下所示：
+
+<div align="center">
+    <img src="6_Socket_服务器编程难点/4.png" width="500"/>
+</div>
+
+当使用 close 关闭管道的读端时，只有当管道的读端引用计数为 0 时，才会真正关闭读端的描述符，因此需要同时关闭父子进程的读端描述符。这时，父进程继续往管道中写时，会产生 SIGPIPE 信号，如下所示：
+
+```c
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/linux_programming
+
+Process finished with exit code 141 (interrupted by signal 13: SIGPIPE)
+```
+
+#### 2.2 管道的写端全部关闭
+
+```c{.line-numbers}
+int main() {
+    int ret;
+    int fd[2];
+    pid_t pid;
+
+    char *str = "hello pipe\n";
+    char buf[1024];
+
+    ret = pipe(fd);
+    if (ret == -1) {
+        perror("pipe error");
+        exit(1);
+    }
+
+    pid = fork();
+    if (pid > 0) {
+        // 关闭管道的写端 fd[1]
+        close(fd[1]);
+        sleep(3);
+        write(fd[1], str, strlen(str));
+        close(fd[0]);
+    } else if (pid == 0){
+        // 关闭管道的写端 fd[1]
+        close(fd[1]);
+        ret = read(fd[0], buf, sizeof(buf));
+        write(STDOUT_FILENO, buf, ret);
+        close(fd[0]);
+    }
+
+    return 0;
+}
+```
+
+当我们把父子进程管道的写端描述符都关闭时，父进程向写端发送数据时，不会报错，直接向后执行。而当子进程执行 read 操作时，由于写端的描述符均被关闭，这时 read 直接返回 0（类似于读到文件结尾），ret = 0，因此控制台上不会显示字符串。如下所示：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/linux_programming
+
+Process finished with exit code 0
+```
+
+总结管道的读写会发生的情况：
+
+读管道：
+1. 管道中有数据，read 返回实际读到的字节数。
+2. 管道中无数据：
+(1) **管道写端被全部关闭，read 返回 0 (好像读到文件结尾)**
+(2) 写端没有全部被关闭，read 阻塞等待 (不久的将来可能有数据递达，此时会让出 CPU)
+
+写管道：
+1. **管道读端全部被关闭， 进程异常终止 (也可使用捕捉 SIGPIPE 信号，使进程不终止)**
+2. 管道读端没有全部关闭：
+(1) 管道已满，write 阻塞。
+(2) 管道未满，write 将数据写入，并返回实际写入的字节数。
+
+### 3.Socket 的 SIGPIPE
+
+#### 3.1 SIGPIPE 信号
+
+我们使用以下的 client.c 和 server.c 代码来模拟出现 SIGPIPE 的情况。服务器端的代码如下所示，服务端通过 read(fd) 读取 socket 获取客户端数据，然后将小写转换为大写 toupper()，然后发送给客户端。
+
+```c{.line-numbers}
+// server.c
+int main() {
+
+    int lfd = 0, cfd = 0;
+
+    struct sockaddr_in serv_addr, clit_addr;
+    socklen_t clit_addr_len;
+    char buf[BUFSIZ], client_ip[1024];
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    lfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        sys_err("socket error");
+    }
+
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    listen(lfd, 256);
+    clit_addr_len = sizeof(clit_addr);
+    cfd = accept(lfd, (struct sockaddr *) &clit_addr, &clit_addr_len);
+
+    printf("client ip:%s, port:%d\n",
+           inet_ntop(AF_INET, &clit_addr.sin_addr.s_addr, client_ip, sizeof(clit_addr)),
+           ntohs(clit_addr.sin_port));
+
+    if (cfd == -1) {
+        sys_err("accept error");
+    }
+
+    while (1) {
+        int ret = read(cfd, buf, sizeof(buf));
+        if (ret < 0) {
+            if (errno == ECONNRESET ){
+                write(STDOUT_FILENO, 'reset\n', 6);
+            }
+        }
+        write(STDOUT_FILENO, buf, ret);
+
+        for(int i = 0; i < ret; i++) {
+            buf[i] = toupper(buf[i]);
+        }
+
+        write(cfd, buf, ret);
+        // 服务器睡眠 5s，等待客户端进程执行完毕后退出，客户端进程退出时，会发送 FIN 报文
+        sleep(5);
+    }
+
+    close(lfd);
+    close(cfd);
+
+    return 0;
+
+}
+```
+
+客户端的代码如下所示，向服务端发送 10 次 'hello' 字符串，然后进程退出，在代码中没有显式关闭 cfd 套接字描述符，但是客户端进程退出后，Init 进程会自动关闭客户端进程所属的所有描述符。
+
+```c{.line-numbers}
+// client.c
+int main() {
+
+    int cfd;
+    int counter = 10;
+    char buf[BUFSIZ];
+    unsigned int ip = 0;
+
+    // 服务器地址结构
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "127.0.0.1", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    connect(cfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
+
+    while (counter--) {
+        int ret = write(cfd, "hello\n", 6);
+        printf("%d\n", counter);
+    }
+
+    return 0;
+}
+```
+
+最后服务器端运行的结果为：
+
+```c
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
+client ip:127.0.0.1, port:40398
+hello
+hello
+
+Process finished with exit code 141 (interrupted by signal 13: SIGPIPE)
+```
+
+client 向 server 发送 10 次 hello 字符串，然后进程退出，cfd 套接字描述符被关闭，并且向服务器端发送 FIN 报文。server 首先读取第一个 hello 字符串，然后转换成大写，再调用 write 写会给 client，而 client 此时进程已经退出，会返回一个 RST 报文给 server。但是此时 server 阻塞在 sleep 函数上。随后 server 读取第二个 hello 字符串，然后再次写回给 client，这时出现 SIGPIPE 错误。
+
+#### 3.2 ECONNRESET 错误
+
+为了模拟 ECONNRESET 错误
