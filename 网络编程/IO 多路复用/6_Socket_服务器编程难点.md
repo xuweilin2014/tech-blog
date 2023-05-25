@@ -517,6 +517,8 @@ Process finished with exit code 0
 
 ### 3.Socket 的 SIGPIPE
 
+#### 3.1 Socket 中两次 write 产生 SIGPIPE 信号
+
 我们使用以下的 client.c 和 server.c 代码来模拟出现 SIGPIPE 的情况。服务器端的代码如下所示，服务端通过 read(fd) 读取 socket 获取客户端数据，然后将小写转换为大写 toupper()，然后发送给客户端。
 
 ```c{.line-numbers}
@@ -607,7 +609,7 @@ int main() {
 }
 ```
 
-最后服务器端运行的结果为：
+最后服务器端 server.c 运行的结果为：
 
 ```c
 /home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
@@ -619,3 +621,108 @@ Process finished with exit code 141 (interrupted by signal 13: SIGPIPE)
 ```
 
 client 向 server 发送 10 次 hello 字符串，然后进程退出，cfd 套接字描述符被关闭，并且向服务器端发送 FIN 报文。server 首先读取第一个 hello 字符串，然后转换成大写，再调用 write 写会给 client，而 client 此时进程已经退出，会返回一个 RST 报文给 server。但是此时 server 阻塞在 sleep 函数上。随后 server 读取第二个 hello 字符串，然后再次写回给 client，这时出现 SIGPIPE 错误。
+
+#### 3.2 Socket 的 shutdown 产生 SIGPIPE
+
+我们对上述 client.c 中的代码进行了一些修改，在客户端发送数据之前，调用 shutdown 关闭了连接的写部分，如下所示：
+
+```c{.line-numbers}
+int main() {
+
+    int cfd;
+    int counter = 10;
+    char buf[BUFSIZ];
+    unsigned int ip = 0;
+
+    // 服务器地址结构
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "127.0.0.1", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    connect(cfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
+
+    while (counter--) {
+        // 在发送数据之前，关闭此 socket 的写部分
+        shutdown(cfd, SHUT_WR);
+        int ret = write(cfd, "hello\n", 6);
+        printf("%d\n", counter);
+        sleep(60);
+    }
+
+    return 0;
+}
+```
+
+最后 client.c 运行产生的结果如下所示：
+
+```c
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+Signal: SIGPIPE (Broken pipe)
+
+Process finished with exit code 1
+```
+
+所以，对 A -> B 之间的 socket 使用 shutdown 函数关闭 A 的写部分，A 再往 socket 中写入数据时，会产生 SIGPIPE 错误。接下来我们测试一下关闭 B 端的读部分，A 继续往写入数据的情况。客户端的代码如下：
+
+```c{.line-numbers}
+    // client.c
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    connect(cfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
+
+    while (counter--) {
+        int ret = write(cfd, "hello\n", 6);
+        sleep(10);
+    }
+
+    return 0;
+```
+
+服务端的代码如下所示：
+
+```c{.line-numbers}
+    // server.c
+
+    while (1) {
+        shutdown(cfd, SHUT_RD);
+        int ret = read(cfd, buf, sizeof(buf));
+        if (ret < 0) {
+            if (errno == ECONNRESET ){
+                write(STDOUT_FILENO, 'reset\n', 6);
+            }
+        }
+        write(STDOUT_FILENO, buf, ret);
+
+        for(int i = 0; i < ret; i++) {
+            buf[i] = toupper(buf[i]);
+        }
+
+        write(cfd, buf, ret);
+        sleep(5);
+    }
+```
+
+server 端关闭 socket 的读部分，client 继续往 socket 中写入数据，最后 client 运行得到的结果如下所示（只显示了一部分）：
+
+```c
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+Signal: SIGPIPE (Broken pipe)
+Signal: SIGPIPE (Broken pipe)
+Signal: SIGPIPE (Broken pipe)
+Signal: SIGPIPE (Broken pipe)
+
+```
+
+server 运行得到的结果如下所示：
+
+```c
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
+
+```
+
+可以看出，对 A -> B 之间的 socket 使用 shutdown 函数关闭 B 的读部分，A 继续往里面写入数据的话会报 SIGPIPE 异常，和管道 pipe 中的情况一样。
