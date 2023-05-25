@@ -517,8 +517,6 @@ Process finished with exit code 0
 
 ### 3.Socket 的 SIGPIPE
 
-#### 3.1 SIGPIPE 信号
-
 我们使用以下的 client.c 和 server.c 代码来模拟出现 SIGPIPE 的情况。服务器端的代码如下所示，服务端通过 read(fd) 读取 socket 获取客户端数据，然后将小写转换为大写 toupper()，然后发送给客户端。
 
 ```c{.line-numbers}
@@ -578,7 +576,7 @@ int main() {
 }
 ```
 
-客户端的代码如下所示，向服务端发送 10 次 'hello' 字符串，然后进程退出，在代码中没有显式关闭 cfd 套接字描述符，但是客户端进程退出后，Init 进程会自动关闭客户端进程所属的所有描述符。
+客户端的代码如下所示，向服务端发送 10 次 'hello' 字符串，然后进程退出，在代码中没有显式关闭 cfd 套接字描述符，但是客户端进程退出后，Init 进程会自动关闭客户端进程所属的所有描述符，描述符被关闭时，会发出 FIN 报文。
 
 ```c{.line-numbers}
 // client.c
@@ -621,7 +619,3 @@ Process finished with exit code 141 (interrupted by signal 13: SIGPIPE)
 ```
 
 client 向 server 发送 10 次 hello 字符串，然后进程退出，cfd 套接字描述符被关闭，并且向服务器端发送 FIN 报文。server 首先读取第一个 hello 字符串，然后转换成大写，再调用 write 写会给 client，而 client 此时进程已经退出，会返回一个 RST 报文给 server。但是此时 server 阻塞在 sleep 函数上。随后 server 读取第二个 hello 字符串，然后再次写回给 client，这时出现 SIGPIPE 错误。
-
-#### 3.2 ECONNRESET 错误
-
-为了模拟 ECONNRESET 错误
