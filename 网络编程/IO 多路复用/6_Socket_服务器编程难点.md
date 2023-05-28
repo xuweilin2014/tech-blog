@@ -622,11 +622,13 @@ Process finished with exit code 141 (interrupted by signal 13: SIGPIPE)
 
 client 向 server 发送 10 次 hello 字符串，然后进程退出，cfd 套接字描述符被关闭，并且向服务器端发送 FIN 报文。server 首先读取第一个 hello 字符串，然后转换成大写，再调用 write 写会给 client，而 client 此时进程已经退出，会返回一个 RST 报文给 server。但是此时 server 阻塞在 sleep 函数上。随后 server 读取第二个 hello 字符串，然后再次写回给 client，这时出现 SIGPIPE 错误。
 
-#### 3.2 Socket 的 shutdown 产生 SIGPIPE
+#### 3.2 Socket 的 SHUT_WR 产生 SIGPIPE
 
 我们对上述 client.c 中的代码进行了一些修改，在客户端发送数据之前，调用 shutdown 关闭了连接的写部分，如下所示：
 
 ```c{.line-numbers}
+// client.c
+
 int main() {
 
     int cfd;
@@ -666,10 +668,15 @@ Signal: SIGPIPE (Broken pipe)
 Process finished with exit code 1
 ```
 
-所以，对 A -> B 之间的 socket 使用 shutdown 函数关闭 A 的写部分，A 再往 socket 中写入数据时，会产生 SIGPIPE 错误。接下来我们测试一下关闭 B 端的读部分，A 继续往写入数据的情况。客户端的代码如下：
+所以，对 A -> B 之间的 socket 使用 shutdown 函数关闭 A 的写部分，A 再往 socket 中写入数据时，会产生 SIGPIPE 错误。
+
+#### 3.3 Socket 的 SHUT_RD 不产生 SIGPIPE
+
+接下来我们测试一下关闭 B 端的读部分，A 继续往 socket 写入数据的情况。客户端的代码如下：
 
 ```c{.line-numbers}
-    // client.c
+    // 前面代码与 3.1 的 client 类似
+    // client.c 专门发送数据
 
     cfd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -686,7 +693,8 @@ Process finished with exit code 1
 服务端的代码如下所示：
 
 ```c{.line-numbers}
-    // server.c
+    // 前面代码与 3.1 的 server 类似
+    // server.c 专门接收数据
 
     while (1) {
         shutdown(cfd, SHUT_RD);
@@ -702,12 +710,81 @@ Process finished with exit code 1
             buf[i] = toupper(buf[i]);
         }
 
-        write(cfd, buf, ret);
         sleep(5);
     }
 ```
 
-server 端关闭 socket 的读部分，client 继续往 socket 中写入数据，最后 client 运行得到的结果如下所示（只显示了一部分）：
+server 端关闭 socket 的读部分，client 继续往 socket 中写入数据，最后 client 运行得到的结果如下所示：
+
+```c
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+
+```
+
+server 运行得到的结果（只显示了一部分）如下所示：
+
+```c
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
+client ip:127.0.0.1, port:49994
+hello
+hello
+hello
+hello
+hello
+
+```
+
+可以看出，对 A -> B 之间的 socket 使用 shutdown 函数（参数为 SHUT_RD）关闭 B 的读部分，B 可以继续从 socket 中读取数据，__因此只 SHUT_RD 对 socket 套接字没有影响__。
+
+#### 3.5 Socket 的 SHUT_RDWR 和 SHUT_RD/SHUT_WR 会产生 SIGPIPE
+
+当 A -> B 发送数据时，虽然只关闭 B 的读部分（SHUT_RD）对 B 接收数据以及 A 发送数据没有影响，但是当我们在 B 端同时关闭读/写部分（SHUT_RDWR）或者先关闭读部分再关闭写部分（SHUT_RD/SHUT_WR）时，情况就变得不一样了。
+
+client 端的代码如下所示：
+
+```c{.line-numbers}
+    // 前面代码和 3.1 类似
+    // client.c client 专门发送数据
+
+    connect(cfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
+
+    while (counter--) {
+        int ret = write(cfd, "hello\n", 6);
+        sleep(10);
+    }
+```
+
+server 端的代码如下所示：
+
+```c
+    // 前面代码和 3.1 类似
+    // server.c server 专门接收数据
+
+    cfd = accept(lfd, (struct sockaddr *) &clit_addr, &clit_addr_len);
+
+    printf("client ip:%s, port:%d\n",
+           inet_ntop(AF_INET, &clit_addr.sin_addr.s_addr, client_ip, sizeof(clit_addr)),
+           ntohs(clit_addr.sin_port));
+
+    if (cfd == -1) {
+        sys_err("accept error");
+    }
+
+    while (1) {
+        shutdown(cfd, SHUT_RD);
+        shutdown(cfd, SHUT_WR);
+        int ret = read(cfd, buf, sizeof(buf));
+        write(STDOUT_FILENO, buf, ret);
+
+        for(int i = 0; i < ret; i++) {
+            buf[i] = toupper(buf[i]);
+        }
+
+        sleep(5);
+    }
+```
+
+最后 client 端运行的结果如下所示：
 
 ```c
 /home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
@@ -718,11 +795,15 @@ Signal: SIGPIPE (Broken pipe)
 
 ```
 
-server 运行得到的结果如下所示：
+server 端的运行结果如下所示：
 
 ```c
 /home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
+client ip:127.0.0.1, port:39386
+hello
 
 ```
 
-可以看出，对 A -> B 之间的 socket 使用 shutdown 函数关闭 B 的读部分，A 继续往里面写入数据的话会报 SIGPIPE 异常，和管道 pipe 中的情况一样。
+当 server 既关闭了读部分，又关闭了写部分，会发送一个 FIN 报文给 client，而 client 收到 FIN 之后只能表明 server 关闭了发送通道，至于是使用 close(fd) 还是 shutdown(fd, SHUT_WR) 或者 shutdown(fd, SHUT_RDWR) 对端是不知道的。client 也并不知道 server 的读通道是否关闭，因此可以向 server 继续发送数据。因此 server 端会显示 hello 字符串（有可能会显示多个，取决于 client 在 server 调用 shutdown 之前发送了多少个 hello 字符串），并返回 client RST 报文。
+
+当 client 继续向 server 发送数据时，内核会产生 SIGPIPE 错误。此实验结果对于 SHUT_RDWR 也同样适用。
