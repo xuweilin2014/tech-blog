@@ -94,8 +94,4 @@ select 函数修改由指针 readset、writeset 和 exceptset 所指向的的描
     <img src="1_Select_Epoll_Poll_函数详解_static/1.png" width="500"/>
 </div>
 
-socket select
-socket close
-socket shutdown
 socket send/recv
-socket read/write

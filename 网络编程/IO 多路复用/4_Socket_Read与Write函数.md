@@ -195,3 +195,9 @@ while(true)
 ```
 
 这样做的问题是，设备 1 有数据到达时可能不能及时处理，最长需延迟 n 秒才能处理，而且反复查询还是做了很多无用功。而 select/poll/epoll 等函数可以阻塞地同时监视多个设备，还可以设定阻塞等待的超时时间，从而圆满地解决了这个问题。
+
+#### 7.read 和 write 函数总结
+
+<div align="center">
+    <img src="4_Socket_Read与Write函数/1.png" width="1200"/>
+</div>

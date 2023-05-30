@@ -337,3 +337,43 @@ Not really. The close() call really does not convey what we are trying to tell t
 **发送方：send() -> shutdown(WR) -> read() == 0（由接收方 close 导致） -> close()**
 **接收方：read() == 0（由发送方 shutdown 导致）-> more to send? -> close()**
 
+另外，在使用 python 时，一般先调用 shutdown，再调用 close，原因如下：
+
+Calling close and shutdown have two different effects on the underlying socket.
+
+The first thing to point out is that the socket is a resource in the underlying OS and multiple processes can have a handle for the same underlying socket.
+
+When you call close it decrements the handle count by one and if the handle count has reached zero then the socket and associated connection goes through the normal close procedure (effectively sending a FIN / EOF to the peer) and the socket is deallocated.
+
+The thing to pay attention to here is that if the handle count does not reach zero __because another process still has a handle to the socket then the connection is not closed and the socket is not deallocated__.
+
+On the other hand calling shutdown for reading and writing closes the underlying connection and sends a FIN/EOF to the peer regardless of how many processes have handles to the socket. __However, it does not deallocate the socket and you still need to call close afterward__.
+
+即不管有多少个进程在使用 socket 套接字，先调用 shutdown 都会产生一个 FIN 报文（SHUT_WR、SHUT_RDWR），然后其它的进程将无法进行通信（继续发送数据，会产生 SIGPIPE 错误），但是 shutdown 并不会释放掉 socket 套接字，shutdown 与 socket 描述符没有关系，即使调用 shutdown(fd, SHUT_RDWR) 也不会关闭 fd，最终还需 close(fd)，因此还是需要调用 close。
+
+SO_LINGER 与 close，当 SO_LINGER 选项开启但超时值为 0 时，调用 close 直接发送 RST（这样可以避免进入 TIME_WAIT 状态，但破坏了 TCP 协议的正常工作方式），SO_LINGER 对 shutdown 无影响。
+
+**TCP 连接上出现 RST 与随后可能的 TIME_WAIT 状态没有直接关系，主动发 FIN 包方必然会进入TIME_WAIT 状态，除非不发送 FIN 而直接以发送 RST 结束连接**。
+
+#### 5.6 when to use SO_LINGER option
+
+According to "UNIX Network Programming" third edition page 202-203, setting SO_LINGER with timeout 0 prior to calling close() will cause the normal termination sequence not to be initiated.
+
+**Instead, the peer setting this option and calling close() will send a RST (connection reset)** which indicates an error condition and this is how it will be perceived at the other end. You will typically see errors like "Connection reset by peer".
+
+Therefore, in the normal situation it is a really bad idea to set SO_LINGER with timeout 0 prior to calling close() – from now on called abortive close – in a server application.
+
+However, certain situation warrants doing so anyway:
+
+- If a client of your server application misbehaves (times out, returns invalid data, etc.) an abortive close makes sense to avoid being stuck in CLOSE_WAIT or ending up in the TIME_WAIT state.
+- If you must restart your server application which currently has thousands of client connections you might consider setting this socket option to avoid thousands of server sockets in TIME_WAIT (when calling close() from the server end) as this might prevent the server from getting available ports for new client connections after being restarted.
+
+### 6.总结
+
+| 函数      | 说明 |
+| :----: | ------ |
+| shutdown, SHUT_RD      | 在套接字上不能再发出接收请求；进程仍可往套接字发送数据套接字接收缓冲区中所有数据被丢弃：再接收到的任何数据由 TCP 丢弃；对套接字发送缓冲区没有任何影响。       |
+| shutdown, SHUT_WR   | 在套接字上不能再发出发送请求（会产生 SIGPIPE 错误）；进程仍可从套接字接收数据；套接字发送缓冲区中的内容被发送到对端,后跟正常的 TCP 连接终止序列 (即发送 FIN);对套接字接收缓冲区无任何影响。        |
+| close, __l_onoff=0(默认情况)__ | 在套接字上不能再发出发送或接收请求：套接字发送缓冲区中的内容被发送到对端。如果描述符引用计数变为 0：__在发送完发送缓冲区中的数据后，跟以正常的 TCP 连接终止序列__（即发送 FIN）；套接字接收缓冲区中内容被丢弃。 |
+|close, l_onoff = 1, l_linger = 0| 在套接字上不能再发出发送或接收请求。如果描述符引用计数变为 0：__RST 被发送到对端；连接的状态被置为 CLOSED (没有 TIME_WAIT 状态)__；套接字发送缓冲区和套接字接收缓冲区中的数据被丢弃。|
+|close, l_onoff = 1, l_linger != 0| 在套接字上不能再发出发送或接收请求；套接字发送缓冲区中的数据被发送到对端。如果描述符引用计数变为 0：在发送完发送缓冲区中的数据后，跟以正常的 TCP 连接终止序列 (即发送 FIN)；套接字接收缓冲区中数据被丢弃：如果在连接变为 CLOSED 状态前延滞时间到，那么 close 返回 EWOULDBLOCK 错误。|
