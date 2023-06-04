@@ -688,6 +688,247 @@ int main(void)
 }
 ```
 
+下面通过额外几个例子来说明 epoll 的 ET 和 LT 模式的区别：
+
+#### 2.1 程序一
+
+```c{.line-numbers}
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+
+int main(void)
+{
+    int epfd,nfds;
+    // ev用于注册事件，数组用于返回要处理的事件
+    struct epoll_event ev,events[5]; 
+    // 只需要监听一个描述符——标准输入   
+　　epfd = epoll_create(1);    
+　　ev.data.fd = STDIN_FILENO;
+    // 监听读状态同时设置 ET 模式
+　　ev.events = EPOLLIN|EPOLLET;    
+    // 注册 epoll 事件
+　　epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev);   
+   for(;;)
+　　{
+　　　　nfds = epoll_wait(epfd, events, 5, -1);
+       for(int i = 0; i < nfds; i++)
+　　　　{
+           if(events[i].data.fd==STDIN_FILENO)
+　　　　　　　　printf("welcome to epoll's word!\n");
+
+　　　　}
+　　}
+} 
+```
+
+编译并运行，结果如下：
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/7.png" width="550"/>
+</div>
+
+1. 当用户输入一组字符，这组字符被送入 buffer，字符停留在 buffer 中，又因为 buffer 由空变为不空，所以 ET 返回读就绪，输出 "welcome to epoll's world!"。
+2. 之后程序再次执行 epoll_wait，此时虽然 buffer 中有内容可读，但是 buffer 的状态并不改变，ET 并不返回就绪，导致 epoll_wait 阻塞。（底层原因是 ET 下就绪 fd 的 epitem 只被放入rdlist一次）。
+3. 用户再次输入一组字符，导致 buffer 中的内容增多，根据我们上节的分析这将导致 fd 状态的改变，是对应的 epitem 再次加入 rdlist，从而使 epoll_wait 返回读就绪，再次输出 "Welcome to epoll's world!"。
+
+接下来我们将上面程序的第 11 行做如下修改：
+
+```c{.line-numbers}
+ev.events=EPOLLIN;    // 默认使用 LT 模式 
+```
+
+编译并运行，结果如下：
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/8.png" width="550"/>
+</div>
+
+程序陷入死循环，因为用户输入任意数据后，数据被送入 buffer 且没有被读出，所以 LT 模式下每次 epoll_wait 都认为 buffer 可读返回读就绪。导致每次都会输出 "welcome to epoll's world!"。
+
+#### 2.2 程序二
+
+```c{.line-numbers}
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+
+int main(void)
+{
+    int epfd,nfds;
+    // ev 用于注册事件，数组用于返回要处理的事件
+    struct epoll_event ev, events[5];                    
+    // 只需要监听一个描述符——标准输入
+    epfd = epoll_create(1);                                
+    ev.data.fd = STDIN_FILENO;
+    // 监听读状态同时设置 LT 模式
+    ev.events = EPOLLIN;                                
+    // 注册 epoll 事件
+    epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev);    
+    for(;;)
+    {
+        nfds = epoll_wait(epfd, events, 5, -1);
+        for(int i = 0; i < nfds; i++)
+        {
+            if(events[i].data.fd==STDIN_FILENO)
+            {
+                char buf[1024] = {0};
+                read(STDIN_FILENO, buf, sizeof(buf));
+                printf("welcome to epoll's world!\n");
+            }
+        }
+    }
+}
+```
+
+编译并运行，结果如下：
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/9.png" width="550"/>
+</div>
+
+本程序依然使用 LT 模式，但是每次 epoll_wait 返回读就绪的时候我们都将 buffer（缓冲）中的内容 read 出来，所以导致 buffer 再次清空，下次调用 epoll_wait 就会阻塞。所以能够实现我们所想要的功能——当用户从控制台有任何输入操作时，输出 "welcome to epoll's world!"。
+
+#### 2.3 程序三
+
+```c{.line-numbers}
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+
+int main(void)
+{
+    int epfd,nfds;
+    // ev 用于注册事件，数组用于返回要处理的事件
+    struct epoll_event ev,events[5];                    
+    // 只需要监听一个描述符——标准输入
+    epfd = epoll_create(1);                                
+    ev.data.fd = STDOUT_FILENO;
+    // 监听读状态同时设置 ET 模式
+    ev.events = EPOLLOUT|EPOLLET;                        
+    // 注册 epoll 事件
+    epoll_ctl(epfd, EPOLL_CTL_ADD, STDOUT_FILENO, &ev);    
+    for(;;)
+    {
+        nfds = epoll_wait(epfd, events, 5, -1);
+        for(int i = 0; i < nfds; i++)
+        {
+            if(events[i].data.fd==STDOUT_FILENO)
+            {
+                printf("welcome to epoll's word!\n");
+            }
+        }
+    }
+}
+```
+
+编译并运行，结果如下：
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/10.png" width="550"/>
+</div>
+
+这个程序的功能是只要标准输出写就绪，就输出 "welcome to epoll's world"。我们发现这将是一个死循环。下面具体分析一下这个程序的执行过程：
+
+1. 首先初始 buffer 为空，buffer 中有空间可写，这时无论是 ET 还是 LT 都会将对应的 epitem 加入 rdlist，导致 epoll_wait 就返回写就绪。
+2. 程序想标准输出输出 "welcome to epoll's world" 和换行符，__因为标准输出为控制台的时候缓冲是"行缓冲"，所以换行符导致 buffer 中的内容清空（换行符 \n 相当于起到了一个 write 的作用）__，这就对应第二节中 ET 模式下写就绪的第二种情况——当有旧数据被发送走时，即 buffer 中待写的内容变少的时候会触发 fd 状态的改变。所以下次 epoll_wait 会返回写就绪。如此循环往复。
+
+#### 2.4 程序四
+
+```c{.line-numbers}
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+
+int main(void)
+{
+    int epfd,nfds;
+    // ev 用于注册事件，数组用于返回要处理的事件
+    struct epoll_event ev,events[5];                    
+    // 只需要监听一个描述符——标准输入
+    epfd = epoll_create(1);                                
+    ev.data.fd = STDOUT_FILENO;
+    // 监听读状态同时设置 ET 模式
+    ev.events = EPOLLOUT|EPOLLET;                        
+    // 注册 epoll 事件
+    epoll_ctl(epfd, EPOLL_CTL_ADD, STDOUT_FILENO, &ev);    
+    for(;;)
+    {
+        nfds = epoll_wait(epfd, events, 5, -1);
+        for(int i = 0; i < nfds; i++)
+        {
+            if(events[i].data.fd==STDOUT_FILENO)
+            {
+                printf("welcome to epoll's word!");
+            }            
+        }
+    }
+} 
+```
+
+编译并运行，结果如下：
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/11.png" width="500"/>
+</div>
+
+与程序三相比，程序四只是将输出语句的 printf 的换行符移除。我们看到程序成挂起状态。因为第一次 epoll_wait 返回写就绪后，程序向标准输出的 buffer 中写入 "welcome to epoll's world!"，但是因为没有输出换行，所以 buffer 中的内容一直存在，下次 epoll_wait 的时候，虽然有写空间但是 ET 模式下不再返回写就绪。即**只有当写空间增加的时候**，ET 模式下，epoll_wait 才会返回。
+
+#### 2.5 程序五
+
+```c{.line-numbers}
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/epoll.h>
+
+int main(void)
+{
+    int epfd,nfds;
+    // ev 用于注册事件，数组用于返回要处理的事件
+    struct epoll_event ev,events[5];                    
+    // 只需要监听一个描述符——标准输入
+    epfd = epoll_create(1);                                
+    ev.data.fd = STDOUT_FILENO;
+    // 监听读状态同时设置 LT 模式
+    ev.events = EPOLLOUT;                               
+    // 注册 epoll 事件
+    epoll_ctl(epfd, EPOLL_CTL_ADD, STDOUT_FILENO, &ev);    
+    for(;;)
+    {
+        nfds = epoll_wait(epfd, events, 5, -1);
+        for(int i = 0; i < nfds; i++)
+        {
+            if(events[i].data.fd==STDOUT_FILENO)
+            {
+                printf("welcome to epoll's word!");
+            }            
+        }
+    }
+} 
+```
+
+编译并运行，结果如下：
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/12.png" width="500"/>
+</div>
+
+程序五相对程序四仅仅是修改 ET 模式为默认的 LT 模式，我们发现程序再次死循环。这时候原因已经很清楚了，因为当向 buffer 写入 "welcome to epoll's world!" 后，虽然 buffer 没有输出清空，但是 LT 模式下只有 buffer 有写空间就返回写就绪，所以会一直输出 "welcome to epoll's world!"，当 buffer 满的时候，buffer 会自动刷清输出，同样会造成 epoll_wait 返回写就绪。
+
+最后总结 ET 和 LT 的区别。
+
+ET 模式：
+   - 对于读取操作：
+     - **当有新数据到达时，即 buffer 中的待读内容变多的时候**
+   - 对于写操作：
+     - **当有旧数据被发送走时，即 buffer 中的写空间变多时，或者说 buffer 中待写的内容变少得时候**
+
+LT 模式：
+   - 对于读操作：
+     - **buffer 中有数据可读的时候，即 buffer 不空的时候**
+   - 对于写操作：
+     - **buffer 中有空间可写的时候，即 buffer 不满的时**
+
 ### 3. epoll + reactor 模式
 
 使用 reactor 模型 + epoll 函数来实现高性能服务器，epoll 的本质和观察者模型类似，服务器在 epoll 注册事件以及和事件对应的处理器函数，当事件被触发时，就回调处理器函数。比如注册的 lfd 的 EPOLLIN 对应的 accept_conn 函数，当有用户连接时，就会触发，调用 accept 函数，建立连接。
@@ -1555,6 +1796,19 @@ epoll 是对 select 和 poll 的改进，能避免前面所述 select 的三个�
 
 与 select 相比，epoll 分清了频繁调用和不频繁调用的操作。例如，epoll_ctl 是不太频繁调用的，而 epoll_wait 是非常频繁调用的。这时，epoll_wait 却几乎没有入参，这比 select 的效率高出一大截，而且，它也不会随着并发连接的增加使得入参越发多起来，导致内核执行效率下降。
 
+接下来有两个问题，那就是 epoll 是通过什么数据结构来管理通过 epoll_ctl 添加的 socket。以及 eventpoll 中维护的就绪队列采用什么数据结构。
+
+__红黑树将存储 epoll 所监听的套接字__。epoll 在实现上采用红黑树去存储所有套接字，当添加或者删除一个套接字时（epoll_ctl），都在红黑树上去处理，红黑树本身插入和删除性能比较好，时间复杂度 O(logN)。
+
+eventpoll 的就绪列表 rdlist 引用着就绪的 socket，所以它应能够快速的插入 socket，而且当程序调用 epoll_ctl 删除对某个 socket 的监视时，若该 socket 已经存放在就绪列表中，它也应该被移除。所以就绪列表应是一种能够快速插入和删除的数据结构。双向链表就是这样一种数据结构，__epoll 使用双向链表来实现就绪队列__。
+
+通过 epoll_ctl 函数添加进来的事件都会被放在红黑树的某个节点内，所以，重复添加是没有用的。当把事件添加进来的时候时候会完成关键的一步，__那就是该事件都会与相应的设备（网卡）驱动程序建立回调关系，当相应的事件发生后，就会调用这个回调函数__，该回调函数在内核中被称为：ep_poll_callback，这个回调函数其实就是把这个事件添加到 rdlist 这个双向链表中。一旦有事件发生，epoll 就会将该事件添加到双向链表中。那么当我们调用 epoll_wait 时，epoll_wait 只需要检查 rdlist 双向链表中是否有存在注册的事件，效率非常可观。这里也需要将发生了的事件复制到用户态内存中即可。
+
+epoll 的工作流程如下所示：
+
+1. epoll 初始化时，__会向内核注册一个文件系统，用于存储被监控的句柄文件__，调用epoll_create 时，会在这个文件系统中创建一个 file 节点。同时 epoll 会开辟自己的内核高速缓存区，以红黑树的结构保存句柄，以支持快速的查找、插入、删除。还会再建立一个 list 链表，用于存储准备就绪的事件。
+2. 当执行 epoll_ctl 时，除了把 socket 句柄放到 epoll 文件系统里 file 对象对应的红黑树上之外，还会给内核中断处理程序注册一个回调函数，告诉内核，如果这个句柄的中断到了，就把它放到准备就绪 list 链表里。所以，当一个 socket 上有数据到了，内核在把网卡上的数据 copy 到内核中后，就把 socket 插入到就绪链表里。
+3. 当 epoll_wait 调用时，仅仅观察就绪链表里有没有数据，如果有数据就返回，否则就 sleep，超时时立刻返回。
 
 **1) 第一个缺点**
 
@@ -1585,5 +1839,11 @@ epoll 是对 select 和 poll 的改进，能避免前面所述 select 的三个�
 
 <div align="center">
     <img src="1_Select_Epoll_Poll_函数详解_static/5.png" width="500"/>
+</div>
+
+select/poll/epoll 的三种 I/O 复用模式的比较：
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/6.png" width="800"/>
 </div>
 
