@@ -341,11 +341,11 @@ select 的调用过程如下所示：
 
 - 使用 copy_from_user __从用户空间拷贝 fd_set 到内核空间__
 - 注册回调函数 __pollwait
-- 遍历所有 fd，调用其对应的 poll 方法（对于 socket，这个 poll 方法是 sock_poll，sock_poll 根据连接情况会调用到 tcp_poll，udp_poll 或者 datagram_poll），以 tcp_poll 为例，其核心实现就是 __pollwait，也就是上面注册的回调函数。__pollwait 的主要工作就是把 current（当前进程）挂到 fd 对应的设备等待队列中，不同的设备有不同的等待队列，对于 tcp_poll 来说，其等待队列是 sk->sk_sleep（注意把进程挂到等待队列中并不代表进程已经睡眠了）。**即每次调用 select 都会把 current 进程挂到各个 fd 对应的设备等待队列中**。
+- 遍历所有 fd，调用其对应的 poll 方法（对于 socket，这个 poll 方法是 sock_poll，sock_poll 根据连接情况会调用到 tcp_poll，udp_poll 或者 datagram_poll），以 tcp_poll 为例，其核心实现就是 __pollwait，也就是上面注册的回调函数。__pollwait 的主要工作就是把 current（当前进程）挂到 fd 对应的设备等待队列中，不同的设备有不同的等待队列，对于 tcp_poll 来说，其等待队列是 sk->sk_sleep（注意把进程挂到等待队列中并不代表进程已经睡眠了）。**即每次调用 select 都会把 current 进程挂到各个 fd 对应的设备等待队列中**
 - 然后 poll 方法返回时会返回一个描述读写操作是否就绪的 mask 掩码，根据这个 mask 掩码给fd_set 赋值
-- 如果遍历完所有的 fd（即第二步的操作，遍历所有 fd 并调用 poll 方法），还没有返回一个可读写的 mask 掩码，则会调用 schedule_timeout 使得调用 select 的进程（也就是 current）进入睡眠。当设备驱动发生自身资源可读写后，会唤醒其等待队列上睡眠的进程。
-- 如果超过一定的超时时间（schedule_timeout 指定），还是没人唤醒，__则调用 select 的进程会重新被唤醒获得 CPU，进而重新遍历 fd（还是在 select 函数中），判断有没有就绪的 fd__（即 select 调用会遍历 fd，如没有就绪的，则休眠，过一会儿再次被唤醒遍历 fd，没有就绪的，再休眠，如此循环直到发生就绪事件）。
-- 把 fd_set 从内核空间拷贝到用户空间。
+- 如果遍历完所有的 fd（即第二步的操作，遍历所有 fd 并调用 poll 方法），还没有返回一个可读写的 mask 掩码，则会调用 schedule_timeout 使得调用 select 的进程（也就是 current）进入睡眠。当设备驱动发生自身资源可读写后，会唤醒其等待队列上睡眠的进程。**进程被唤醒之后，只需遍历一遍 fd 列表，就可以得到就绪的 fd**
+- 如果超过一定的超时时间（schedule_timeout 指定），还是没人唤醒，__则调用 select 的进程会重新被唤醒获得 CPU，进而重新遍历 fd（还是在 select 函数中），判断有没有就绪的 fd__（即 select 调用会遍历 fd，如没有就绪的，则休眠，过一会儿再次被唤醒遍历 fd，没有就绪的，再休眠，如此循环直到发生就绪事件）
+- 把 fd_set 从内核空间拷贝到用户空间
 
 根据上述 select 函数调用中的具体步骤，select 的缺点如下：
 
@@ -929,7 +929,7 @@ LT 模式：
    - 对于写操作：
      - **buffer 中有空间可写的时候，即 buffer 不满的时**
 
-### 3. epoll + reactor 模式
+### 3.epoll + reactor 模式
 
 使用 reactor 模型 + epoll 函数来实现高性能服务器，epoll 的本质和观察者模型类似，服务器在 epoll 注册事件以及和事件对应的处理器函数，当事件被触发时，就回调处理器函数。比如注册的 lfd 的 EPOLLIN 对应的 accept_conn 函数，当有用户连接时，就会触发，调用 accept 函数，建立连接。
 
@@ -1770,7 +1770,7 @@ int main(void) {
 #endif
 ```
 
-### 4.4 epoll 和 select/poll 的不同点
+### 5.epoll 和 select/poll 的不同点
 
 高并发的核心解决方案是 1 个线程处理所有连接的"等待消息准备好"，这一点上 epoll 和 select是无争议的。但 select 预估错误了一件事，当数十万并发连接存在时，可能每一毫秒只有数百个活跃的连接，同时其余数十万连接在这一毫秒是非活跃的。select 的使用方法是这样的：
 
@@ -1807,7 +1807,7 @@ eventpoll 的就绪列表 rdlist 引用着就绪的 socket，所以它应能够�
 epoll 的工作流程如下所示：
 
 1. epoll 初始化时，__会向内核注册一个文件系统，用于存储被监控的句柄文件__，调用epoll_create 时，会在这个文件系统中创建一个 file 节点。同时 epoll 会开辟自己的内核高速缓存区，以红黑树的结构保存句柄，以支持快速的查找、插入、删除。还会再建立一个 list 链表，用于存储准备就绪的事件。
-2. 当执行 epoll_ctl 时，除了把 socket 句柄放到 epoll 文件系统里 file 对象对应的红黑树上之外，还会给内核中断处理程序注册一个回调函数，告诉内核，如果这个句柄的中断到了，就把它放到准备就绪 list 链表里。所以，当一个 socket 上有数据到了，内核在把网卡上的数据 copy 到内核中后，就把 socket 插入到就绪链表里。
+2. 当执行 epoll_ctl 时，除了把 socket 句柄放到 epoll 文件系统里 file 对象对应的红黑树上之外，还会把当前进程保存到 eventpoll 的等待队列中，最后还会给内核中断处理程序注册一个回调函数，告诉内核，如果这个句柄的中断到了，就把它放到准备就绪 list 链表里。所以，当一个 socket 上有数据到了，内核在把网卡上的数据 copy 到内核中后，就把 socket 插入到就绪链表里。
 3. 当 epoll_wait 调用时，仅仅观察就绪链表里有没有数据，如果有数据就返回，否则就 sleep，超时时立刻返回。
 
 **1) 第一个缺点**
@@ -1847,3 +1847,193 @@ select/poll/epoll 的三种 I/O 复用模式的比较：
     <img src="1_Select_Epoll_Poll_函数详解_static/6.png" width="800"/>
 </div>
 
+### 6.epoll 与 select 图解
+
+#### 6.1 从网卡接收数据开始
+
+下图是一个典型的计算机结构图，计算机由 CPU、存储器（内存）、网络接口等部件组成。了解epoll 本质的第一步，要从硬件的角度看计算机怎样接收网络数据。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/13.jpg" width="600"/>
+</div>
+
+下图展示了网卡接收数据的过程。在 1 阶段，网卡收到网线传来的数据；经过 2 阶段的硬件电路的传输；最终将数据写入到内存中的某个地址上（3 阶段）。这个过程涉及到 DMA 传输、IO通路选择等硬件有关的知识，但我们只需知道：网卡会把接收到的数据写入内存。__注意此内存并不是套接字的接收缓冲区，最后还需要 CPU 才能把数据从此内存区域传输到套接字的接收缓冲区中，以及从内核中的接收缓冲区传输到用户缓冲区中__。
+
+#### 6.2 如何知道接受了数据？
+
+了解 epoll 本质的第二步，要从 CPU 的角度来看数据接收。要理解这个问题，要先了解一个概念——中断。计算机执行程序时，会有优先级的需求。比如，当计算机收到断电信号时（电容可以保存少许电量，供 CPU 运行很短的一小段时间），它应立即去保存数据，保存数据的程序具有较高的优先级。
+
+一般而言，由硬件产生的信号需要 CPU 立马做出回应（不然数据可能就丢失），所以它的优先级很高。CPU 理应中断掉正在执行的程序，去做出响应；当 cpu 完成对硬件的响应后，再重新执行用户程序。中断的过程如下图，和函数调用差不多。只不过函数调用是事先定好位置，而中断的位置由"信号"决定。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/14.png" width="200"/>
+</div>
+
+以键盘为例，当用户按下键盘某个按键时，键盘会给 CPU 的中断引脚发出一个高电平。CPU 能够捕获这个信号，然后执行键盘中断程序。现在可以回答本节提出的问题了：当网卡把数据写入到内存后，网卡向 CPU 发出一个中断信号，操作系统便能得知有新数据到来，再通过网卡中断程序去处理数据。
+
+#### 6.3 进程阻塞为什么不占用 CPU 资源
+
+了解 epoll 本质的第三步，要从操作系统进程调度的角度来看数据接收。阻塞是进程调度的关键一环，指的是进程在等待某事件（如接收到网络数据）发生之前的等待状态，read、select和 epoll 都是阻塞方法。了解"进程阻塞为什么不占用 CPU 资源?"，也就能够了解这一步。
+
+为简单起见，我们从普通的 recv 接收开始分析，先看看下面代码：
+
+```c{.line-numbers}
+// 创建 socket
+int s = socket(AF_INET, SOCK_STREAM, 0);   
+// 绑定
+bind(s, ...)
+// 监听
+listen(s, ...)
+// 接受客户端连接
+int c = accept(s, ...)
+// 接收客户端数据
+read(c, ...);
+// 将数据打印出来
+printf(...) 
+```
+
+这是一段最基础的网络编程代码，先新建 socket 对象，依次调用 bind、listen、accept，最后调用 recv 接收数据。recv 是个阻塞方法，当程序运行到 recv 时，它会一直等待，直到接收到数据才往下执行。不过，阻塞的原理是什么？
+
+**1) 工作队列**
+
+操作系统为了支持多任务，实现了进程调度的功能，会把进程分为"运行"和"等待"等几种状态。运行状态是进程获得 CPU 使用权，正在执行代码的状态；等待状态是阻塞状态，比如上述程序运行到 read 时，程序会从运行状态变为等待状态，接收到数据后又变回运行状态。操作系统会分时执行各个运行状态的进程，由于速度很快，看上去就像是同时执行多个任务。
+
+下图中的计算机中运行着 A、B、C 三个进程，其中进程 A 执行着上述基础网络程序，一开始，这 3 个进程都被操作系统的工作队列所引用，处于运行状态，会分时执行。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/15.png" width="350"/>
+</div>
+
+**2) 等待队列**
+
+当进程 A 执行到创建 socket 的语句时，操作系统会创建一个由文件系统管理的 socket 对象（如下图）。这个 socket 对象包含了发送缓冲区、接收缓冲区、等待队列等成员。__等待队列是个非常重要的结构，它指向所有需要等待该 socket 事件的进程__。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/16.png" width="350"/>
+</div>
+
+当程序执行到 read 时，操作系统会将进程 A 从工作队列移动到该 socket 的等待队列中（如下图）。由于工作队列只剩下了进程 B 和 C，依据进程调度，CPU 会轮流执行这两个进程的程序，不会执行进程 A 的程序。所以进程 A 被阻塞，不会往下执行代码，也不会占用 CPU 资源。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/17.jpg" width="350"/>
+</div>
+
+操作系统添加某个进程到等待队列只是添加了对这个"等待中"进程的引用，以便在接收到数据时获取进程对象、将其唤醒，而非直接将进程管理纳入自己之下。上图为了方便说明，直接将进程挂到等待队列之下。__当 socket 接收到数据后，操作系统将该 socket 等待队列上的进程重新放回到工作队列，该进程变成运行状态，继续执行代码__。也由于 socket 的接收缓冲区已经有了数据，read 可以返回接收到的数据。
+
+#### 6.4 同时监视多个 socket 的方法
+
+**1.select 方法**
+
+服务端需要管理多个客户端连接，而 read 只能监视单个 socket，这种矛盾下，人们开始寻找监视多个 socket 的方法。epoll 的要义是高效的监视多个 socket。从历史发展角度看，必然先出现一种不太高效的方法，人们再加以改进。只有先理解了不太高效的方法，才能够理解 epoll 的本质。
+
+假如能够预先传入一个 socket 列表，如果列表中的 socket 都没有数据，挂起进程，直到有一个 socket 收到数据，唤醒进程。这种方法很直接，也是 select 的设计思想。
+
+```c{.line-numbers}
+int s = socket(AF_INET, SOCK_STREAM, 0);  
+bind(s, ...)
+listen(s, ...)
+
+int fds[] = 存放需要监听的socket
+
+while(1){
+    int n = select(..., fds, ...)
+    for(int i=0; i < fds.count; i++){
+        if(FD_ISSET(fds[i], ...)){
+            // fds[i]的数据处理
+        }
+    }
+} 
+```
+
+**2.select 流程**
+
+select 的实现思路很直接。假如程序同时监视如下图的 sock1、sock2 和 sock3 三个 socket，那么在调用 select 之后，操作系统把进程 A 分别加入这三个 socket 的等待队列中。这就是前面介绍 select 函数所说的"__调用 select 函数时，要把 current 往所有的设备等待队列中挂__"。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/18.png" width="350"/>
+</div>
+
+当任何一个 socket 收到数据后，中断程序将唤起进程。下图展示了 sock2 接收到了数据的处理流程。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/19.png" width="350"/>
+</div>
+
+所谓唤起进程，就是将进程从所有的等待队列中移除，加入到工作队列里面。如下图所示。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/20.png" width="350"/>
+</div>
+
+经由这些步骤，当进程 A 被唤醒后，它知道至少有一个 socket 接收了数据。程序只需遍历一遍 socket 列表，就可以得到就绪的 socket。
+
+**_总结 select 的工作流程就是：每次调用 select 函数都会将 current 当前进程添加到所有 fd 对应的设备等待队列中，然后调用 schedule_timeout 函数进入阻塞等待状态；当某一个 fd 上有数据到达，具备就绪条件时，就会触发中断程序，将 current 进程从所有 fd 的等待队列中移除，添加到工作队列中获取 CPU 重新执行，当然还是得重新遍历 fd 集合判断哪些 fd 有数据；如果超过一定的超时时间（schedule_timeout 指定），还是没人唤醒，则调用 select 的进程会重新被唤醒获得 CPU，进而重新遍历 fd（还是在 select 函数中），判断有没有就绪的 fd_**。
+
+这种简单方式行之有效，在几乎所有操作系统都有对应的实现。但是简单的方法往往有缺点，主要是：
+
+- 每次调用 select 都需要将进程加入到所有监视 socket 的等待队列，__每次唤醒还需要从每个 socket 的等待队列中移除__。这里涉及了两次遍历，而且每次都要将整个 fds 列表拷贝到内核，然后把 fds 从内核拷贝到用户空间，有一定的开销。正是因为遍历操作开销大，出于效率的考量，才会规定 select 的最大监视数量，默认只能监视 1024 个 socket。
+- 进程被唤醒后，程序并不知道哪些 socket 收到数据，还需要遍历一次。
+
+#### 6.5 epoll 的设计思路
+
+epoll 是在 select 出现多年后才被发明的，是 select 和 poll 的增强版本。epoll 通过以下一些措施来改进效率。
+
+**1) 措施一：功能分离**
+
+select 低效的原因之一是将"维护等待队列"和"阻塞进程"两个步骤合二为一。如下图所示，每次调用 select 都需要这两步操作（将 current 进程添加到每个 fd 对应的等待队列中，以及阻塞等待 fd 就绪），然而大多数应用场景中，需要监视的 socket 相对固定，并不需要每次都修改。
+
+epoll 将这两个操作分开，先用 epoll_ctl 维护等待队列，再调用 epoll_wait 阻塞进程。显而易见的，效率就能得到提升。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/21.png" width="280"/>
+</div>
+
+**2) 措施二：就绪列表**
+
+select 低效的另一个原因在于 select 方法执行时不知道哪些 socket 收到数据，只能每次一个个遍历，根据 poll 函数的返回值来判断此 socket 是否就绪。如果内核维护一个“就绪列表”，引用就绪的 socket，就能避免遍历。如下图所示，计算机共有三个 socket，收到数据的sock2 和 sock3 被 rdlist（就绪列表）所引用。当进程被唤醒后，只要获取 rdlist 的内容，就能够知道哪些 socket 收到数据。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/22.png" width="350"/>
+</div>
+
+#### 6.6 epoll 的原理与流程
+
+**1) 创建 eventpoll 对象**
+
+如下图所示，当某个进程调用 epoll_create 方法时，内核会创建一个 eventpoll 对象（也就是程序中 epfd 所代表的对象），eventpoll 也是一个文件描述符对象，因此可以说 epoll使用一个文件描述符管理多个描述符。__eventpoll 对象也是文件系统中的一员，和 socket 一样，它也会有等待队列__。同时，eventpoll 中还会维护一个"就绪列表"作为成员。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/23.png" width="350"/>
+</div>
+
+**2) 维护监视队列**
+
+创建 epoll 对象后，可以用 epoll_ctl 添加或删除所要监听的 socket。以添加 socket 为例，如下图，如果通过 epoll_ctl 添加 sock1、sock2 和 sock3 的监视，内核会将这三个 socket 添加到 eventpoll 的等待队列中。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/24.png" width="350"/>
+</div>
+
+当 socket 收到数据后，中断程序会操作 eventpoll 对象，而不是直接操作进程。
+
+**3) 接收数据**
+
+当 socket 收到数据后，中断程序会给 eventpoll 的"就绪列表"添加 socket 引用。如下图展示的是 sock2 和 sock3 收到数据后，中断程序让 rdlist 引用这两个 socket。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/25.png" width="350"/>
+</div>
+
+eventpoll 对象相当于是 socket 和进程之间的中介，socket 的数据接收并不直接影响进程，而是通过改变 eventpoll 的就绪列表来改变进程状态。__当程序执行到 epoll_wait 时，如果 rdlist 已经引用了 socket，那么 epoll_wait 直接返回，如果 rdlist 为空，阻塞进程__。
+
+**4) 阻塞和唤醒进程**
+
+假设计算机中正在运行进程 A 和进程 B，在某时刻进程 A 运行到了 epoll_wait 语句。如下图所示，内核会将进程 A 放入 eventpoll 的等待队列中，阻塞进程。
+
+<div align="center">
+    <img src="1_Select_Epoll_Poll_函数详解_static/26.png" width="350"/>
+</div>
+
+当 socket 接收到数据，中断程序一方面修改 rdlist，另一方面唤醒 eventpoll 等待队列中的进程，进程 A 再次进入运行状态（如下图）。也因为 rdlist 的存在，进程 A 通过返回的rdlist，可以知道哪些 socket 发生了变化。
+
+总结 epoll 的执行过程为：调用 epoll_ctl 将不同的 fd 添加到 eventpoll 的等待队列中，并且会注册一个回调函数，如果 fd 上发生了就绪事件，那么此 fd 会被添加到 rdlist 中；然后调用 epoll_wait，将 current 进程也添加到 eventpoll 的等待队列中，阻塞等待；当 fd 发生了就绪事件时，current 进程会被添加到工作队列中，准备获取 CPU 继续执行，同时把 fd 添加到就绪队列 rdlist 中，最后当 current 获取到 CPU 后，执行 epoll_wait 直接返回 rdlist 的结果。

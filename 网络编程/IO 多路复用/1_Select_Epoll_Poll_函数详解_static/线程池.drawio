@@ -1,0 +1,182 @@
+<mxfile host="Electron" modified="2023-06-03T13:16:00.661Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.2.8 Chrome/112.0.5615.165 Electron/24.2.0 Safari/537.36" etag="MbyhSlVG8ikBxwchtli_" version="21.2.8" type="device">
+  <diagram name="第 1 页" id="E0OqM58wUucWfDKx6ohA">
+    <mxGraphModel dx="1265" dy="731" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3300" pageHeight="4681" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-2" value="" style="rounded=1;whiteSpace=wrap;html=1;glass=0;arcSize=5;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="170" y="120" width="930" height="570" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-67" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.13;entryY=1.002;entryDx=0;entryDy=0;curved=1;entryPerimeter=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-36" target="deHtl9nt0TIYY7x_sbbm-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-36" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="270" y="370" width="220" height="276" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;curved=1;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-3" target="deHtl9nt0TIYY7x_sbbm-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-3" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;adjust_thread&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="500" y="760" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-5" value="&lt;font size=&quot;1&quot; style=&quot;&quot;&gt;&lt;b style=&quot;font-size: 18px;&quot;&gt;线程池&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="580" y="70" width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-7" value="&lt;b&gt;threadpool_task_t:&lt;/b&gt;&lt;br style=&quot;border-color: var(--border-color);&quot;&gt;&lt;span style=&quot;&quot;&gt;void* (*function)(void* arg)&lt;br&gt;&lt;/span&gt;void* arg" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="280" y="260" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-13" value="&lt;b&gt;threadpool_task_t:&lt;/b&gt;&lt;br style=&quot;border-color: var(--border-color);&quot;&gt;&lt;span style=&quot;&quot;&gt;void* (*function)(void* arg)&lt;br&gt;&lt;/span&gt;void* arg" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="440" y="260" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-14" value="&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;threadpool_task_t:&lt;/b&gt;&lt;br style=&quot;border-color: var(--border-color);&quot;&gt;void* (*function)(void* arg)&lt;br style=&quot;border-color: var(--border-color);&quot;&gt;void* arg" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="600" y="260" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-15" value="&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;threadpool_task_t:&lt;/b&gt;&lt;br style=&quot;border-color: var(--border-color);&quot;&gt;void* (*function)(void* arg)&lt;br style=&quot;border-color: var(--border-color);&quot;&gt;void* arg" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="760" y="260" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-17" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;&lt;b&gt;任务队列&lt;br&gt;(模拟环形队列）&lt;br&gt;&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="170" y="265" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-20" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;&lt;b&gt;工作线程&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="340" y="370" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-30" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-21" target="deHtl9nt0TIYY7x_sbbm-27">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-21" value="&lt;b&gt;从任务队列中取出任务&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="297.5" y="412" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;curved=1;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-22" target="deHtl9nt0TIYY7x_sbbm-23">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-22" value="&lt;font style=&quot;font-size: 13px;&quot;&gt;&lt;b&gt;queue_rear 指针&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="900" y="170" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-23" value="&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;&lt;font style=&quot;font-size: 14px;&quot;&gt;空&lt;/font&gt;&lt;br&gt;&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="920" y="260" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-26" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;curved=1;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-25" target="deHtl9nt0TIYY7x_sbbm-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-25" value="&lt;font style=&quot;font-size: 13px;&quot;&gt;&lt;b&gt;queue_front 指针&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="330" y="170" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-27" target="deHtl9nt0TIYY7x_sbbm-28">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-27" value="&lt;b&gt;忙线程数量加 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="297.5" y="472" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-34" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-28" target="deHtl9nt0TIYY7x_sbbm-29">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-28" value="&lt;b&gt;执行回调函数任务&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="297.5" y="532" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-35" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-29" target="deHtl9nt0TIYY7x_sbbm-21">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="470" y="608" />
+              <mxPoint x="470" y="428" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-29" value="&lt;b&gt;忙线程数量减 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="297.5" y="592" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-38" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;&lt;b&gt;线程&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="877.5" y="382" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-39" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-40" target="deHtl9nt0TIYY7x_sbbm-42">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-70" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.75;entryY=1;entryDx=0;entryDy=0;curved=1;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-37" target="deHtl9nt0TIYY7x_sbbm-7">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="913" y="350" />
+              <mxPoint x="400" y="350" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-37" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="802.5" y="370" width="220" height="276" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-71" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-40" target="deHtl9nt0TIYY7x_sbbm-42">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-40" value="&lt;b&gt;从任务队列中取出任务&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="830" y="412" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-41" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-42" target="deHtl9nt0TIYY7x_sbbm-44">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-42" value="&lt;b&gt;忙线程数量加 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="830" y="472" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-43" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-44" target="deHtl9nt0TIYY7x_sbbm-46">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-44" value="&lt;b&gt;执行回调函数任务&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="830" y="532" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-45" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-46" target="deHtl9nt0TIYY7x_sbbm-40">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1002.5" y="608" />
+              <mxPoint x="1002.5" y="428" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-46" value="&lt;b&gt;忙线程数量减 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="830" y="592" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-68" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;curved=1;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-57" target="deHtl9nt0TIYY7x_sbbm-7">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="630" y="360" />
+              <mxPoint x="360" y="360" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-57" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="535" y="370" width="220" height="276" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-58" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;&lt;b&gt;工作线程&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="605" y="370" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-59" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-60" target="deHtl9nt0TIYY7x_sbbm-62">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-60" value="&lt;b&gt;从任务队列中取出任务&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="562.5" y="412" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-61" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-62" target="deHtl9nt0TIYY7x_sbbm-64">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-62" value="&lt;b&gt;忙线程数量加 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="562.5" y="472" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-63" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-64" target="deHtl9nt0TIYY7x_sbbm-66">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-64" value="&lt;b&gt;执行回调函数任务&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="562.5" y="532" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-65" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="deHtl9nt0TIYY7x_sbbm-66" target="deHtl9nt0TIYY7x_sbbm-60">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="735" y="608" />
+              <mxPoint x="735" y="428" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-66" value="&lt;b&gt;忙线程数量减 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="562.5" y="592" width="145" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="deHtl9nt0TIYY7x_sbbm-69" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;&lt;b&gt;工作线程&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="862.5" y="370" width="80" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
