@@ -458,7 +458,40 @@ typedef union epoll_data {
 int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout);
 ```
 
-等待 epfd 上的 I/O 事件，最多返回 maxevents 个事件。参数 events 用来从内核得到事件的集合，maxevents 告诉内核这个传入的 events 有多大，这个 maxevents 的值不能大于创建 epoll_create() 时的 size，参数 timeout 是超时时间（毫秒，0 会立即返回，-1 是永久阻塞，> 0 为指定毫秒数）。该函数返回需要处理的事件数目。
+等待 epfd 上的 I/O 事件，最多返回 maxevents 个事件。参数 events 用来从内核得到事件的集合，maxevents 告诉内核这个传入的 events 有多大，这个 maxevents 的值不能大于创建 epoll_create() 时的 size，参数 timeout 是超时时间（毫秒，0 会立即返回，-1 是永久阻塞，> 0 为指定毫秒数）。该函数返回需要处理的事件数目。如果返回 0 表示超时。调用失败返回 -1。
+
+epoll_wait 的使用模版如下所示：
+
+```c{.line-numbers}
+while (true)
+{
+    epoll_event epoll_events[1024];
+    int n = epoll_wait(epollfd, epoll_events, 1024, 1000);
+    if (n < 0) {
+        //被信号中断
+        if (errno == EINTR)
+            continue;
+        //出错，退出
+        break;
+    }
+    else if (n == 0) {
+        // 超时，继续
+        continue;
+    }
+
+    for (size_t i = 0; i < n; ++i) {
+        // 处理可读事件
+        if (epoll_events[i].events & POLLIN) {
+        }
+        // 处理可写事件
+        else if (epoll_events[i].events & POLLOUT) {
+        }
+        // 处理出错事件
+        else if (epoll_events[i].events & POLLERR) {
+        }
+    }
+}
+```
 
 使用 epoll 函数编写的 server 示例如下所示：
 

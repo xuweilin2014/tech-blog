@@ -1,0 +1,337 @@
+# bind 函数详解
+
+## 一、bind 函数介绍
+
+### 1.bind 函数介绍
+
+__bind 函数把一个本地协议地址赋予一个套接字__。对于网际网协议，协议地址是 32 位的 IPv4 地址或 128 位的 IPv6 地址与 16 位的 TCP 或 UDP 端口号的组合。
+
+```c{.line-numbers}
+// bind 函数若成功则返回 0，若出差则返回 -1
+#include <sys/socket.h>
+int bind(int sockfd, const struct sockaddr *myaddr, socklen_t addrlen);
+```
+
+第二个参数是一个指向特定于协议的地址结构的指针，第三个参数是该地址结构的长度。对于 TCP，**调用 bind 函数可以指定一个端口号，或指定一个 IP 地址，也可以两者都指定，还可以都不指定**。
+
+服务器在启动时捆绑它们的众所周知端口，__如果一个 TCP 客户或服务器未曾调用 bind 捆绑一个端口，当调用 connect 或 listen 时，内核就要为相应的套接字选择一个临时端口__。让内核来选择临时端口对于 TCP 客户来说是正常的，除非应用需要一个预留端口；然而对于 TCP 服务器来说却极为罕见，因为服务器是通过它们的众所周知端口被大家认识的。
+
+这个规则的例外是远程过程调用（Remote Procedure Call, RPC）服务器。它们通常就由内核为它们的监听套接字选择一个临时端口，而该端口随后通过 RPC 端口映射器进行注册。客户在 connect 这些服务器之前，必须与端口映射器联系以获取它们的临时端口。
+
+进程可以把一个特定的 IP 地址捆绑到它的套接字上，不过这个 IP 地址必须属于其所在主机的网络接口之一。对于 TCP 客户，这就为在该套接字上发送的 IP 数据报指派了源 IP 地址。对于 TCP 服务器，这就限定该套接字只接收那些目的地为这个 IP 地址的客户连接。
+
+TCP 客户通常不把 IP 地址捆绑到它的套接字上。当连接套接字时，内核将根据所用外出网络接口来选择源 IP 地址，而所用外出接口则取决于到达服务器所需的路径。__如果 TCP 服务器没有把 IP 地址捆绑到它的套接字上，内核就把客户发送的 SYN 的目的 IP 地址作为服务器的源 IP 地址__。
+
+在调用 bind 函数时，可以指定 IP 地址或者端口，也可以两者都指定，也可以两者都不指定：
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/1.png" width="450"/>
+</div>
+
+如果指定端口号为 0，那么内核就在 bind 被调用时选择一个临时端口。__然而如果指定 IP 地址为通配地址（wildcard），那么内核将等到套接字已连接 (TCP) 或已在套接字上发出数据报 (UDP) 时才选择一个本地 IP 地址__。这是因为 socket 套接字需要一个真正的 IP 地址。
+
+对于 IPv4 来说，通配地址由常值 **_INADDR_ANY_** 来指定，其值一般为 0。它告知内核去选择 IP
+地址。使用方法如下所示：
+
+```c{.line-numbers}
+struct sockaddr_in servaddr;
+servaddr.sin_addr.s_addr = htonl(TNADDR_ANY);  /* wildcard */
+```
+
+如此赋值对 IPv4 是可行的，因为其 IP 地址是一个 32 位的值，可以用一个简单的数字常值表示（本例中为 0），对于 IPv6，我们就不能这么做了，因为 128 位的 IPv6 地址是存放在一个结构中的。（在 C 语言中，赋值语句的右边无法表示常值结构。）为了解决这个问题，我们改写为：
+
+```c{.line-numbers}
+struct sockaddr_in6 serv;
+serv.sin6_addr = in6addr_any;    /* wildcard */
+```
+
+如果让内核来为套接字选择一个临时端口号，那么必须注意，函数 bind 并不返回所选择的值。实际上，由于 bind 函数的第二个参数有 const 限定词，它无法返回所选之值。__为了得到内核所选择的这个临时端口值，必须调用函数 getsockname 来返回协议地址__。
+
+最后从 bind 函数返回的一个常见错误是 EADDRINUSE（"address already in use"，地址已使用）。
+
+### 2.总结
+
+TCP/UDP 连接由五个值组成的元组进行标识：
+
+```c
+{<protocol>, <src addr>, <src port>, <dest addr>, <dest port>}
+```
+
+任何独特的这些值的组合都可以标识一个连接。因此，没有两个连接可以具有相同的五个值，否则系统将无法区分这些连接。
+
+套接字的协议 `<protocol>` 是在使用 socket() 函数创建套接字时设置的。源地址 `<src addr>` 和端口 `<src port>` 是通过 bind() 函数设置的。目标地址 `<dest addr>` 和端口 `<dest port>` 是通过 connect() 函数设置的。由于 UDP 是一种无连接协议，因此可以在不连接它们的情况下使用 UDP 套接字。**在无连接模式下，当首次发送数据时没有明确绑定的 UDP 套接字通常会被系统自动绑定（所谓绑定，其实就是指明【协议】【源地址】【源端口】），因为未绑定的 UDP 套接字无法接收任何（回复）数据。对于未绑定的 TCP 套接字也是如此，它会在连接之前自动绑定**。
+
+如果显式绑定一个套接字，可以将其绑定到端口 0，表示"任何端口"。由于套接字实际上不能绑定到所有现有端口，因此在这种情况下，系统将不得不自行选择一个特定的端口（通常从预定义的操作系统特定源端口范围中选择）。源地址也存在类似的通配符，它可以是“任何地址”（IPv4 的 0.0.0.0）。与端口不同，__在实践中，套接字确实可以【绑定】到“任何地址”，这意味着“所有本地接口的所有源 IP 地址”__。如果稍后连接套接字，系统必须选择一个特定的源 IP 地址，**因为套接字不能同时【连接】并绑定到任何本地 IP 地址**。根据目标地址和路由表的内容，系统将选择一个合适的源地址，并将“任意”绑定替换为绑定到所选源 IP 地址。
+
+**默认情况下，没有两个套接字可以绑定到相同的源地址和源端口组合。只要源端口不同，源地址实际上是无关紧要的（这就是很常见的情况，一台服务器上不同进程监听不同的端口）；当源地址不同时，源端口也可以相同**。如果 ipA != ipB 成立，那么将 socketA 绑定到 ipA:portA 并将 socketB 绑定到 ipB:portB 始终是可行的，即使 portA == portB。例如，socketA 属于 FTP 服务器程序，并绑定到 192.168.0.1:21，而 socketB 属于另一个 FTP 服务器程序，并绑定到 10.0.0.1:21，两个绑定都将成功。但请注意，如果一个套接字绑定到 0.0.0.0:21，它将同时绑定到所有现有本地地址，在这种情况下，无论其他套接字尝试绑定到哪个特定的 IP 地址，都不能绑定到端口 21，因为 0.0.0.0 与所有现有的本地 IP 地址发生冲突。这就需要后面介绍的 SO_REUSEADDR/SO_REUSEPORT 参数。
+
+## 二、SO_REUSEADDR 参数介绍
+
+SO_REUSEADDR 套接字选项能起到以下 4 个不同的功用。
+
+### 1.作用一
+
+SO_REUSEADDR 允许启动一个监听服务器并捆绑其众所周知端口，即使以前建立的将该端口用作它们的本地端口的连接仍存在。这个条件通常是这样碰到的：
+
+1. 启动一个监听服务器；
+2. 连接请求到达，派生一个子进程来处理这个客户；
+3. 监听服务器终止，但子进程继续为现有连接上的客户提供服务；
+4. 重启监听服务器。
+
+默认情况下，当监听服务器在步骤 4 通过调用 socket、bind 和 listen 重新启动时，由于它试图捆绑一个现有连接 (即正由早先派生的那个子进程处理着的连接) 上的端口，从而 bind 调用会失败。**但是如果该服务器在 socket 和 bind 两个调用之间设置了 SO_REUSEADDR 套接字选项，那么 bind 将成功**。所有 TCP 服务器都应该指定本套接字选项，以允许服务器在这种情形下被重新启动。
+
+### 2.作用二
+
+**SO_REUSEADDR 会改变绑定 wildcard 地址的行为，所谓绑定 wildcard 地址，就是绑定 0.0.0.0 这个地址，表示这个 socket 绑定在当前主机的所有网络接口地址上**。
+
+SO_REUSEADDR 允许在同一端口上启动同一服务器的多个实例（即多个进程），只要每个实例捆绑一个不同的本地 IP 地址即可。这对于使用 IP 别名技术托管多个 HTTP 服务器的网点（site）来说是很常见的。
+
+举例来说，假设本地主机的主 IP 地址为 198.69.10.2，不过它有两个别名：198.69.10.128 和 198.69.10.129。在其上启动三个 HTTP 服务器。第一个 HTTP 服务器以本地通配 IP 地址 INADDR_ANY 和本地端口号 80（HTTP 的众所周知端口）调用 bind。第二个 HTTP 服务器以本地 IP 地址 198.69.10.128 和本地端口号 80 调用 bind。__这次调用 bind 将失败，除非在调用前设置了 SO_REUSEADDR 套接字选项__（因为通配符 INADDR_ANY 可以看成是包括了 198.69.10.128 地址）。第三个 HTTP 服务器以本地 IP 地址 198.69.10.129 和本地端口号 80 调用 bind。这次调用 bind 成功的先决条件同样是预先设置 SO_REUSEADDR。
+
+假设 SO_REUSEADDR 均已设置，从而三个服务器都启动了，目的 IP 地址为 198.69.10.128、目的端口号为 80 的外来 TCP 连接请求将被递送给第二个服务器，目的 IP 地址为 198.69.10.129、目的端口号为 80 的外来请求将被递送给第三个服务器，目的端口号为 80 的所有其他 TCP 连接请求将都递送给第一个服务器。
+
+__这个"默认"服务器处理目的地址为 198.69.10.2 或该主机已配置的任何其他 IP 别名的请求。这里通配地址的意思就是"没有更好的（即更为明确的）匹配的任何地址"__。
+
+对于 TCP，我们绝不可能启动捆绑相同 IP 地址和相同端口号的多个服务器：这是完全重复的捆绑 (completely duplicate binding)。也就是说，我们不可能在启动绑定 198.69.10.2 和端口 80 的服务器后，再启动同样捆绑 198.69.10.2 和端口 80 的另一个服务器，即使我们给第二个服务器设置了SO_REUSEADDR 套接字选项也不管用。___其实也是可以绑定的，A 绑定了 198.69.10.2:80 地址，B 服务器也可以绑定到 192.168.10.2:80 地址，前提是 A 不处于 listen 状态__。使用代码进行说明，A 的代码如下所示：
+
+```c{.line-numbers}
+// A 的 socket 代码
+#define SERV_PORT 9523
+
+int main() {
+
+    unsigned int ip = 0;
+    int lfd = 0, cfd = 0;
+    struct sockaddr_in serv_addr, clit_addr;
+    socklen_t clit_addr_len;
+    char buf[BUFSIZ], client_ip[1024];
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "192.168.128.17", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    lfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        sys_err("socket error");
+    }
+
+    int opt = 1;
+    // 设置 SO_REUSEADDR 选项
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof opt);
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+
+    while (1) {
+    }
+
+    return 0;
+
+}
+```
+
+client 的代码如下所示：
+
+```c{.line-numbers}
+// B 的 socket 代码
+#define SERV_PORT 9523
+
+int main() {
+
+    int cfd;
+    int counter = 10;
+    char buf[BUFSIZ];
+    unsigned int ip = 0;
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    // 服务器地址结构
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "192.168.128.17", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    int opt = 1;
+    setsockopt(cfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof opt);
+    bind(cfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+
+    if (errno == EADDRINUSE) {
+        printf("address already in use\n");
+    }
+
+    return 0;
+}
+```
+
+A 与 B 两个进程都会绑定 192.168.128.17:9523 这个地址，先绑定 A 再绑定 B 的地址，则 B 端的输出如下所示，没有出现绑定失败的情况。
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+
+Process finished with exit code 0
+```
+
+如果将 A 端代码中第 25 行添加上 `listen(lfd, 10);`，再次先启动 A 进程，再启动 B 进程，那么 B 端的输出如下所示，即 A 处于 listen 状态之后，B 无法绑定到同一地址，errno 为 98，即 EADDRINUSE。
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+address already in use
+
+Process finished with exit code 0
+```
+
+为了安全起见，有些操作系统不允许对已经绑定了通配地址的端口再捆绑任何“更为明确的”地址，也就是说不论是否预先设置 SO_REUSEADDR，上述例子中的系列 bind 调用都会失败。在这样的系统上，执行通配地址捆绑的服务器进程必须最后一个启动。__这么做是为了防止把恶意的服务器捆绑到某个系统服务正在使用的 IP 地址和端口上，造成合法请求被截取（即端口劫持）__。
+
+If SO_REUSEADDR is enabled on a socket prior to binding it, the socket can be successfully bound unless there is a conflict with another socket **bound to exactly the same combination of source address and port**. Now you may wonder how is that any different than before? The keyword is "exactly". SO_REUSEADDR mainly changes the way how wildcard addresses ("any IP address") are treated when searching for conflicts.
+
+Without SO_REUSEADDR, binding socketA to 0.0.0.0:21 and then binding socketB to 192.168.0.1:21 will fail (with error EADDRINUSE), since **0.0.0.0 means "any local IP address"**, thus all local IP addresses are considered in use by this socket and this includes 192.168.0.1, too. With SO_REUSEADDR it will succeed, **since 0.0.0.0 and 192.168.0.1 are not exactly the same address**, one is a wildcard for all local addresses and the other one is a very specific local address. Note that **the statement above is true regardless in which order socketA and socketB are bound**; without SO_REUSEADDR it will always fail, with SO_REUSEADDR it will always succeed.
+
+To give you a better overview, let's make a table here and list all possible combinations:
+
+```c
+SO_REUSEADDR       socketA        socketB       Result
+---------------------------------------------------------------------
+  ON/OFF       192.168.0.1:21   192.168.0.1:21    Error (EADDRINUSE)
+  ON/OFF       192.168.0.1:21      10.0.0.1:21    OK
+  ON/OFF          10.0.0.1:21   192.168.0.1:21    OK
+   OFF             0.0.0.0:21   192.168.1.0:21    Error (EADDRINUSE)
+   OFF         192.168.1.0:21       0.0.0.0:21    Error (EADDRINUSE)
+   ON              0.0.0.0:21   192.168.1.0:21    OK
+   ON          192.168.1.0:21       0.0.0.0:21    OK
+  ON/OFF           0.0.0.0:21       0.0.0.0:21    Error (EADDRINUSE)
+```
+
+The table above assumes that socketA has already been successfully bound to the address given for socketA, then socketB is created, either gets SO_REUSEADDR set or not, and finally is bound to the address given for socketB. **Result is the result of the bind operation for socketB**. If the first column says ON/OFF, the value of SO_REUSEADDR is irrelevant to the result.
+
+Okay, SO_REUSEADDR has an effect on wildcard addresses, good to know. Yet that isn't its only effect it has. There is another well known effect which is also the reason why most people use SO_REUSEADDR in server programs in the first place. For the other important use of this option we have to take a deeper look on how the TCP protocol works.
+
+对于 BSD 版本的 SO_REUSEADDR 参数，有如下需要注意的地方： Everything written above will work as long as the socket you want to bind to has address reuse enabled. It is not necessary that the other socket, the one which is already bound or is in a TIME_WAIT state, also had this flag set when it was bound. **_The code that decides if the bind will succeed or fail only inspects the SO_REUSEADDR flag of the socket fed into the bind() call_**, for all other sockets inspected, this flag is not even looked at. 也就是，A、B 两个套接字先后绑定到相同 ip:port 地址，只需要 B 套接字设置了 SO_REUSEADDR 选项，那么就可以实现绑定，A 是否设置 SO_REUSEADDR 选项不会影响最后的结果。
+
+但是对于 Linux 系统而言却不是这样，A、B 两个套接字必须设置好 SO_REUSEADDR 选项，否则会出现 EADDRINUSE 错误。A 端代码示例如下所示，没有设置 SO_REUSEADDR 选项，并且先调用 bind 函数。
+
+```c{.line-numbers}
+// A 端代码
+#define SERV_PORT 9523
+
+int main() {
+
+    unsigned int ip = 0;
+    int lfd = 0, cfd = 0;
+
+    struct sockaddr_in serv_addr, clit_addr;
+    socklen_t clit_addr_len;
+    char buf[BUFSIZ], client_ip[1024];
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "192.168.17.128", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    lfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        sys_err("socket error");
+    }
+
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+
+    while (1) {
+    }
+
+    return 0;
+}
+```
+
+B 端代码如下所示，设置了 SO_REUSEADDR 选项，等待 A 启动并调用完 bind 函数后，B 再调用 bind 函数。
+
+```c{.line-numbers}
+// B 端代码
+#define SERV_PORT 9523
+
+int main() {
+
+    int cfd;
+    int counter = 10;
+    char buf[BUFSIZ];
+    unsigned int ip = 0;
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    // 服务器地址结构
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "192.168.17.128", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    int opt = 1;
+    setsockopt(cfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    bind(cfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+
+    if (errno == EADDRINUSE) {
+        printf("address already in use\n");
+    }
+
+    return 0;
+}
+```
+
+最后 B 端输出结果如下所示：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+address already in use
+
+Process finished with exit code 0
+```
+
+当 A 添加上 SO_REUSEADDR 选项时，B 端的输出结果如下所示：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+
+Process finished with exit code 0
+```
+
+这也就证明了我们的结论，Linux 系统中，如果多个 socket 要绑定到同一个 ip:port 地址，那么这些 socket 必须都要设置有 SO_REUSEADDR 选项。
+
+### 3.作用三
+
+SO_REUSEADDR 允许完全重复的捆绑：当一个 IP 地址和端口已绑定到某个套接字上时，如果传输协议支持，同样的 IP 地址和端口还可以捆绑到另一个套接字上。一般来说本特性仅支持 UDP 套接字（用于多播）。
+
+本特性用于多播时（多播使用 UDP 协议实现），允许在同一个主机上同时运行同一个应用程序的多个副本。当一个 UDP 数据报需由这些重复捆绑套接字中的一个接收时，所用规则为：__如果该数据报的目的地址是一个广播地址或多播地址，那就给每个匹配的套接字递送一个该数据报的副本；但是如果该数据报的目的地址是一个单播地址，那么它只递送给单个套接字__。在单播数据报情况下，如果有多个套接字匹配该数据报，那么该选择由哪个套接字接收它取决于实现。
+
+### 4.connect 函数的 EADDRINUSE 错误
+
+大多数人都知道，bind() 可能会失败并出现 EADDRINUSE 错误，但是如果你开始尝试地址重用，你可能会遇到这样的奇怪情况：connect() 也会因为相同的错误而失败。那么这是怎么回事呢？远程地址，毕竟这是 connect() 添加到套接字中的内容，怎么可能被占用呢？连接多个套接字到完全相同的远程地址以前从来没有问题过，所以这里出现了什么问题？
+
+正如之前所述，一个连接由五个值组成的元组定义，并且这五个值必须是唯一的，否则系统就无法再区分两个连接了。现在使用地址重用，我们可以将两个相同协议的套接字绑定到相同的源地址和端口。这意味着这些两个套接字的三个值已经相同。如果现在尝试将这两个套接字都连接到相同的目标地址和端口，那么将创建两个连接套接字，它们的元组是完全相同的。
+
+这对于 TCP 连接来说是不可行的。如果数据到达任何一个连接，系统将无法确定数据属于哪个连接。至少目标地址或目标端口必须对于每个连接都不同，这样系统就没有办法识别传入的数据属于哪个连接。
+
+因此，__如果你将两个相同协议的套接字绑定到相同的源地址和端口，并尝试将它们都连接到相同的目标地址和端口，则 connect() 实际上会对第二个套接字失败并出现 EADDRINUSE 错误__，这意味着已经有一个具有完全相同的五元组的套接字已经连接。
+
+### 5.潜在的安全问题
+
+SO_REUSEADDR 有一个潜在的安全问题。举例来说，假设存在一个绑定了通配地址和端口 5555 的套接字，如果指定 SO_REUSEADDR，我们就可以把相同的端口捆绑到不同的 IP 地址上，譬如说就是所在主机的主 IP 地址。此后目的地为端口 5555 及新绑定 IP 地址的数据报将被递送到新的套接字，而不是递送到绑定了通配地址的已有套接字。这些数据报可以是 TCP 的 SYN 分节。
+
+**对于大多数众所周知的服务如 HTTP、FTP 和 Telnet 来说，这不成问题，因为这些服务器绑定的是保留端口（用户编写的程序无法占用这些保留端口）**。这种情况下，后来的试图捆绑这些端口更为明确的实例（也就是盗用这些端口）的任何进程都需要超级用户特权。然而 NFS 可能是一个问题，因为它的通常端口（2049）并不是保留端口。
+
+## 三、SO_REUSEPORT 参数介绍
+
+4.4BSD 随多播支持的添加引入了 SO_REUSEPORT 这个套接字选项。给 SO_REUSEPORT 引入了以下语义：
+
+1. 本选项允许完全重复的捆绑，**不过只有在想要捆绑同一 IP 地址和端口的每个套接字都指定了本套接字选项才行**；
+2. 如果被捆绑的 IP 地址是一个多播地址，那么 SO_REUSEADDR 和 SO_REUSEPORT 被认为是等效的。
+
+SO_REUSEPORT is what most people would expect SO_REUSEADDR to be. Basically, SO_REUSEPORT allows you to bind an arbitrary number of sockets to exactly the same source address and port as long as all prior bound sockets also had SO_REUSEPORT set before they were bound. If the first socket that is bound to an address and port does not have SO_REUSEPORT set, no other socket can be bound to exactly the same address and port, regardless if this other socket has SO_REUSEPORT set or not, until the first socket releases its binding again. Unlike in case of SO_REUSEADDR the code handling SO_REUSEPORT will not only verify that the currently bound socket has SO_REUSEPORT set but it will also verify that the socket with a conflicting address and port had SO_REUSEPORT set when it was bound.
+
+本 SO_REUSEPORT 套接字选项的问题在于并非所有系统都支持它。在那些不支持本选项但是支持多播的系统上；**我们改用 SO_REUSEADDR 以允许合理的完全重复的捆绑**（也就是同一时刻在同一个主机上可运行多次且期待接收广播或多播数据报的 UDP 程序）。
+
+Most people ignore the fact that multicast addresses exist, but they do exist. While unicast addresses are used for one-to-one communication, multicast addresses are used for one-to-many communication. Most people got aware of multicast addresses when they learned about IPv6 but multicast addresses also existed in IPv4, even though this feature was never widely used on the public Internet.
+
+The meaning of SO_REUSEADDR changes for multicast addresses as it allows multiple sockets to be bound to exactly the same combination of source multicast address and port. **_In other words, for multicast addresses SO_REUSEADDR behaves exactly as SO_REUSEPORT for unicast addresses_**（对应于我们所说的第二点，即 SO_REUSEADDR 和 SO_REUSEPORT 对于多播地址是等效的）. Actually, the code treats SO_REUSEADDR and SO_REUSEPORT identically for multicast addresses, that means you could say that SO_REUSEADDR implies SO_REUSEPORT for all multicast addresses and the other way round.
+
+在 Linux 3.9 系统中支持了 SO_REUSEPORT 选项，与 BSD 系统中该选项的实现同样有一些差异。
+
+To prevent "port hijacking", there is one special limitation: All sockets that want to share the same address and port combination **_must belong to processes that share the same effective user ID_**! So one user cannot "steal" ports of another user. 
+
