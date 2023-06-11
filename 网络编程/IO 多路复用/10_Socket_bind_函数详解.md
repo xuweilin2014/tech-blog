@@ -335,3 +335,502 @@ The meaning of SO_REUSEADDR changes for multicast addresses as it allows multipl
 
 To prevent "port hijacking", there is one special limitation: All sockets that want to share the same address and port combination **_must belong to processes that share the same effective user ID_**! So one user cannot "steal" ports of another user. 
 
+## 四、Linux 系统 bind 函数源码分析
+
+### 1.manpage 文档描述
+
+首先看看在官方文档（manpage 文档），看看是怎么描述的这两个套接字选项的:
+
+> SO_REUSEADDR: Indicates that the rules used in validating addresses supplied in a bind(2) call should allow reuse of local addresses. For AF_INET sockets this means that a socket may bind, except when there is an active listening socket bound to the address. When the listening socket is bound to INADDR_ANY with a specific port then it is not possible to bind to this port for any local address. Argument is an integer boolean flag.
+
+简单翻译一下：SO_REUSEADDR 提供了一套复用地址的规则。对于 AF_INET 套接字，这意味着一个套接字可以绑定，除非有一个活动的监听套接字绑定到该地址。当监听套接字使用特定端口绑定到 INADDR_ANY 时，就不可能为任何本地地址重新绑定到该端口。__这是因为监听套接字处于 LISTEN 状态，如果不处于 LISTEN 状态，那么通过使用 SO_REUSEADDR 选项，两个套接字可以绑定到同一个 ip:port 地址，或者一个套接字绑定 INADDR_ANY:portA，另外一个绑定到 ip:portA（其中 ip 是同一台机器上更为具体的 ip 地址）__。
+
+> SO_REUSEPORT: Permits multiple AF_INET or AF_INET6 sockets to be bound to an identical socket address. This option must be set on each socket (including the first socket) prior to calling bind(2) on the socket. To prevent port hijacking, all of the processes binding to the same address __must have the same effective UID__. This option can be employed with both TCP and UDP sockets.
+> 
+> For TCP sockets, this option allows accept(2) load distribution in a multi-threaded server to be improved __by using a distinct listener socket for each thread__. This provides improved load distribution as compared to traditional techniques such using a single accept(2)ing thread that distributes connections, or __having multiple threads that compete to accept(2) from the same socket__.
+>
+> For UDP sockets, the use of this option can provide better distribution of incoming datagrams to multiple processes (or threads) as compared to the traditional technique of having multiple processes compete to receive datagrams on the same socket.
+
+此选项允许多个 AF_INET 或者 AF_INET6 的套接字绑定到同一个 socket 地址上。必须每一个调用bind函数的socket套接字都要设置这个选项(包括第一个)才能生效。为了防止端口劫持，所有绑定到相同地址的进程必须是同一个 UID。 这个选项适用于 TCP 和 UDP 套接字。
+
+对于 TCP 套接字而言，这个选项通过每个监听线程使用不同的 listen fd 来改进 accpet 的负载分配。相对于传统的做法如只有一个 accept 线程在处理连接，或者是多个线程使用同一个listen fd 进行 accept，REUSEPORT 有助于负载均衡的改进。
+
+对于 UDP 而言，相比如以前多个进程(或线程)都在同一个 socket 上接收数据报的情况的传统做法, 此选项能够提供一种更好的负载均衡能力。
+
+### 2.bind 函数测试
+
+首先做几个测试，我的测试虚拟机是 centos8，基于 Linux version 4.18.0-305.3.1.el8.x86_64版本。两个简单地测试用例如下，有兴趣的同学可以自行测试一遍。server1.cpp 的代码如下：
+
+```cpp{.line-numbers}
+int main(int argc, char* argv[]) {
+    int listenfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenfd < 0) {
+        std::cout << "socket error" << std::endl;
+        return -1;  
+    }
+    int port = 30001;
+    std::string addr_str = "127.0.0.1";
+    std::cout << "tcp server_test1, addr:" << addr_str << ":" << port << "fd=" << listenfd << std::endl;
+
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr(addr_str.c_str());
+
+    int ret = bind(listenfd, (sockaddr*)&addr, sizeof(addr));
+
+    if (ret < 0) {
+        std::cout << "bind error! errno=" << errno << ", err = " << strerror(errno) << std::endl;
+        return -1;  
+    }
+
+    std::cout << "bind succ! server_test1, addr:" << addr_str << ":" << port << "fd=" << listenfd << std::endl;
+    ret = listen(listenfd, 5);
+    if (ret < 0) {
+        std::cout << "listen error! errno=" << errno << ", err = " << strerror(errno) << std::endl;
+        return -1;
+    }
+    std::cout << " listen succ" << std::endl;
+    while (1) {
+        sockaddr cli_addr;
+        socklen_t len;
+        std::cout << "to accept " << std::endl;
+        int connfd = accept(listenfd, &cli_addr, &len);
+        if (connfd < 0) {
+            std::cout << "accept error, error=" << strerror(errno) << std::endl;
+        }
+        std::cout << "accept succ, connfd=" << connfd << std::endl;
+        std::cout << "cin 1 to close connection, go to timewait" << std::endl;
+        int close_flag;
+        std::cin >> close_flag;
+        if (close_flag == 1) {
+            shutdown(connfd, SHUT_WR);
+        }
+        std::cout << "succ call shutdown, now exit" << std::endl;
+        return 0;
+    }
+
+    close(listenfd);
+    return 0;
+}
+```
+
+server2.cpp 的代码如下所示：
+
+```cpp{.line-numbers}
+int main(int argc, char* argv[]) {
+    int listenfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenfd < 0) {
+        std::cout << "socket error" << std::endl;
+        return -1;
+    }
+    int port = 30001;
+    std::string addr_str = "127.0.0.1";
+    std::cout << "tcp server_test2, addr:" << addr_str << ":" << port << "fd=" << listenfd << std::endl;
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(addr_str.c_str());
+    addr.sin_port = htons(port);
+
+    int ret = bind(listenfd, (sockaddr*)&addr, sizeof(addr));
+    if (ret < 0) {
+        std::cout << "bind error! errno=" << errno << ", err = " << strerror(errno) << std::endl;
+        return -1;
+    }
+    std::cout << "bind succ, fd = " << listenfd << ", addr: [127.0.0.1:30001]" << std::endl;
+    std::cout << "bind succ, server_test2, addr:" << addr_str << ":" << port << "fd=" << listenfd << std::endl;
+
+    while (1) {
+    }
+    close(listenfd);
+    return 0;
+}
+```
+
+**1) 测试 1**
+
+不开启 SO_REUSEADDR，也不调用 listen 函数，两个使用相同的 ip:port 进行 bind，结果如下：
+
+```c
+server1 ：127.0.0.1:30001, bind 成功
+server2 ：127.0.0.1:30001, bind 失败
+```
+
+很遗憾，server2 试图 bind 时候得到了错误：`bind error! errno=98, err = Address already in use！`，这就说明如果不开启 SO_REUSEADDR，那么两个套接字无法绑定到相同 ip:port 地址。
+
+**2) 测试 2**
+
+开启 SO_REUSEADDR，不进行 listen，两个使用相同 ip:port 进行 bind，结果如下：
+
+```c
+server1 ：127.0.0.1:30001, bind 成功
+server2 ：127.0.0.1:30001, bind 成功
+```
+
+可以看到，开启 SO_REUSEADDR 并且没有 listen 的情况下，两次 bind 都成功了。说明如果开启 SO_REUSEADDR 选项，并且第一次 socket 调用不处于 listen 状态时，可以绑定到相同的 ip:port 地址。
+
+**3) 测试 3**
+
+开启 SO_REUSEADDR，并且调用 listen 使套接字称为监听状态，两个使用相同 ip:port 进行bind，结果如下：
+
+```c
+server1 ：127.0.0.1:30001, bind 成功
+server2 ：127.0.0.1:30001, bind 失败
+```
+
+可以看到，尽管开启了 SO_REUSEADDR，但是由于套接字调用了 listen 函数，变为了 TCP_LISTEN 状态，第二次 bind 就会失败。
+
+**4) 测试 4**
+
+与测试 3 相同，只是不开启 SO_REUSEADDR，开启 SO_REUSEPORT。
+
+```c
+server1 ：127.0.0.1:30001, bind 成功
+server2 ：127.0.0.1:30001, bind 成功
+```
+
+可以看到，虽然没开启 SO_REUSEADDR，但是开启了 SO_REUSEPORT。套接字调用了 listen 函数，变为了 TCP_LISTEN 状态，但是第二次 bind 还是成功的。
+
+**5) 测试 5**
+
+不开启 REUSEADDR，不开启 REUSEPORT。启动 server1 并监听。 使用 telnet 模拟客户端，当客户端连接上来后，此时 conn_sock 连接处于 ESTABLISHED 状态，而 listen_sock（监听套接字）还是处于 TCP_LISTEN 状态。使用 netstat 观察如下：
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/2.png" width="500"/>
+</div>
+
+然后我们让服务端主动断开 TCP 连接，然后退出程序。根据 TCP 四次挥手的过程，此时 conn_sock 最终预期会进入 TCP_TIMEWAIT 状态。而 listen_sock 由于程序退出，所以 netstat 看不到了。
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/3.png" width="500"/>
+</div>
+
+与此同时，在 TCP_TIMEWAIT 状态下赶紧启动 server2 试图绑定同一个 ip:port，观察是否能正常 bind，很遗憾，bind 失败了。
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/4.png" width="500"/>
+</div>
+
+linux 下 TCP_TIMEWAIT 大约维持 60s 左右，等到 TCP_TIMEWAIT 状态结束后，再启动 server2，发现是能正常绑定的。也就是说，不开启 REUSEADDR，不开启 REUSEPORT。当存在处于 TCP_TIMEWAIT 的连接时时，我们不能马上对这个地址重新 bind。
+
+**6) 测试 6**
+
+与测试 5 完全相同，唯一区别是 server1 和 server2 均开启了 REUSEADDR，不开启 REUSEPORT。实验结果：server2 能在 server1 的 TCP_TIMEWAIT 状态下成功绑定这个地址。
+
+**7) 测试 7**
+
+与测试 5 完全相同，唯一区别是 server1 和 server2 均开启了 REUSEPORT, 不开启 REUSEADDR。实验结果：server2 同样能在 server1 的 TCP_TIMEWAIT 状态下成功绑定这个地址。
+
+### 3.源码分析
+
+#### 3.1 函数调用关系
+
+```c{.line-numbers}
+#------------------- *用户态* ---------------------------
+bind
+#------------------- *内核态* ---------------------------
+__x64_sys_bind # 内核系统调用。
+    |-- __sys_bind # net/socket.c
+        |-- sockfd_lookup_light # net/socket.c - 通过 fd 查找对应的 socket.
+        |-- move_addr_to_kernel # net/socket.c - 将用户态的参数数据拷贝进内核。
+        |-- inet_bind # net/ipv4/af_inet.c
+            |-- 如果协议有自定义的 bind 函数，那么调用自定义的 bind
+            |-- __inet_bind # net/ipv4/af_inet.c
+                |-- AF_INET 兼容性检查
+                |-- < 1024 的端口权限检查
+                |-- 广播与多播地址处理
+                |-- inet_csk_get_port # net/ipv4/inet_connection_sock.c - 端口分配和保存逻辑。
+```
+
+bind 的核心逻辑就是将 socket 和地址端口联系起来。在实现过程中，有一些特殊功能需要注意：
+
+- 端口可以设置为 0 吗？
+> 答：可以，系统会分配一个随机端口。但是服务程序一般都指定特定的端口，而不是由系统随机分配。
+
+- 地址端口可以重复绑定吗?
+> 答：可以，了解一下这两个设置项：SO_REUSEADDR/SO_REUSEPORT。
+> 1.SO_REUSEADDR 是为了解决 TCP_TIME_WAIT 问题。
+> 2.SO_REUSEPORT 是为了解决惊群问题，允许多个进程共同使用相同的地址端口。
+
+#### 3.2 结构
+
+地址和端口会保存在对应的 socket 结构体中，对应的网络端口信息也会存储在内核的哈希表里。
+
+**1) socket 的结构关系如下所示**：
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/5.png" width="1200"/>
+</div>
+
+**2) 哈希表**
+
+glibc 的 bind 最终会调用到内核的 __inet_bind 函数。内核维持了一个绑定端口的哈希表，由于判断端口冲突。在内核中 bind 实际上底层是依靠这个 hash 表实现的，这个 hash 表的示意结构如下：
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/6.png" width="750"/>
+</div>
+
+哈希存储 IP 地址/端口相关数据结构信息。哈希表时间复杂度是 O(1)，非常快。但是这里也有缺点，因为哈希表是由数组和链表的组合结构，自身有冲突链表（哈希链），而且 `inet_bind_bucket` 有 owners 链表，保存共享端口（端口相同）的 socket 数据。
+
+查询数据时，可能需要遍历两个链表，而且在同一个网域下，以端口作为哈希索引，导致不同的 IP 地址相同端口的数据也会在同一个 `inet_bind_bucket` 里。所以 `inet_bind_bucket` 要使用 `fastreuse` 和 `fastreuseport` 去优化，尽量避免链表遍历。更为具体的 hash 结构如下所示：
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/7.png" width="850"/>
+</div>
+
+在上图中，inet_hashinfo 结构体中的 bhash 指针指向的就是 inet_bind_hashbucket 数组。而 inet_bind_hashbucket 结构体中，chain 为 struct hlist_head 类型，其中的 first 指向 inet_bind_bucket 结构体中的 node 结点，这些 node 结点将 inet_bind_bucket 串联成一个链表。并且在每一个 inet_bind_bucket 结构体中，有一个 owners 指向 sock 结构体链表。在这个链表中，每一个 sock 的端口号相同。
+
+```c{.line-numbers}
+// defined in include/linux/types.h
+
+struct hlist_head {
+    struct hlist_node *first;
+};
+
+struct hlist_node {
+    struct hlist_node *next, **pprev;
+};
+```
+
+哈希表其实就是一个以 inet_bind_hashbucket 为元素的数组，**而 hash_key 是一个根据端口号 port、net 等算出来的一个值**。利用 hase_key 找到一个 inet_bind_hashbucket 元素。而 inet_bind_hashbucket 持有一个 inet_bind_bucket 结构体组成的链表。每个 inet_bind_bucket 结构体又持有一个 sock 结构体组成的链表 owners，这条 sock 链表的所有 sock 的 port 端口一定是一样的。**当我们调用 bind 函数时，其实就是去对应的 sock 链表上，添加新的 sock**。
+
+__inet_bind 函数调用 get_port 这个函数指针成员去 bind 端口号。get_port 其实就是 inet_csk_get_port 函数。如果 inet_csk_get_port 无法绑定端口号，就会报错 EINADDRUSE，也就是我们经常遇到的哪个错误码了。这个错误的原因其实就是因为我们新插入的 sock 与原来的 sock 链表中的某个sock 产生冲突了。
+
+哈希表各个结构体的具体源码如下所示：
+
+```c{.line-numbers}
+/* net/ipv4/tcp_ipv4.c */
+struct inet_hashinfo tcp_hashinfo;
+
+/* include/net/inet_hashtables.h */
+struct inet_bind_hashbucket {
+    spinlock_t        lock;
+    struct hlist_head chain;
+};
+
+/* hash 结构，保存了端口对应的 socket 信息。 */
+struct inet_hashinfo {
+    ...
+    /* Ok, let's try this, I give up, we do need a local binding
+     * TCP hash as well as the others for fast bind/connect.
+     */
+    struct kmem_cache            *bind_bucket_cachep;
+    struct inet_bind_hashbucket  *bhash;
+    unsigned int                 bhash_size;
+    ...
+};
+
+/* Networking protocol blocks we attach to sockets.
+ * socket layer -> transport layer interface
+ */
+struct proto {
+    char name[32];
+    ...
+    int (*get_port)(struct sock *sk, unsigned short snum);
+    ...
+    union {
+        struct inet_hashinfo *hashinfo;
+        ...
+    } h;
+    ...
+}
+
+/* net/ipv4/tcp_ipv4.c */
+struct proto tcp_prot = {
+    .name       = "TCP",
+    ...
+    .get_port   = inet_csk_get_port,
+    ...
+    // tcp_hashinfo 相当于是编译器自己给 inet_hashinfo 分配了一块内存空间
+    .h.hashinfo = &tcp_hashinfo,
+    ...
+};
+
+/* include/net/inet_hashtables.h */
+struct inet_bind_bucket {
+    possible_net_t       ib_net;
+    int                  l3mdev;
+    unsigned short       port;          /* 端口号。 */
+    signed char          fastreuse;     /* SO_REUSEADDR 选项。*/
+    signed char          fastreuseport; /* SO_REUSEPORT 选项。*/
+    kuid_t               fastuid;       /* SO_REUSEPORT 选项的用户 id。*/
+#if IS_ENABLED(CONFIG_IPV6)
+    struct in6_addr      fast_v6_rcv_saddr;
+#endif
+    __be32               fast_rcv_saddr;
+    unsigned short       fast_sk_family;
+    bool                 fast_ipv6_only;
+    struct hlist_node    node;   /* bucket 列表，保存哈希冲突的 bucket。*/
+    struct hlist_head    owners; /* socket 信息。 */
+};
+```
+
+哈希表逻辑操作：
+
+```c{.line-numbers}
+/* net/ipv4/tcp.c
+ * 初始化哈希表。也就是分配一个 inet_bind_hashbucket 结构体数组，并将数组指针赋值给 inet_hashinfo 结构体中的 bhash 
+ */
+void __init tcp_init(void) {
+    ...
+    tcp_hashinfo.bhash =
+        alloc_large_system_hash("TCP bind",
+                    sizeof(struct inet_bind_hashbucket),
+                    tcp_hashinfo.ehash_mask + 1,
+                    17, /* one slot per 128 KB of memory */
+                    0,
+                    &tcp_hashinfo.bhash_size,
+                    NULL,
+                    0,
+                    64 * 1024);
+    tcp_hashinfo.bhash_size = 1U << tcp_hashinfo.bhash_size;
+    for (i = 0; i < tcp_hashinfo.bhash_size; i++) {
+        spin_lock_init(&tcp_hashinfo.bhash[i].lock);
+        // #define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL)
+        INIT_HLIST_HEAD(&tcp_hashinfo.bhash[i].chain);
+    }
+    ...
+}
+
+/* 添加 hash bucket。创建一个 inet_bind_bucket 结构体，并添加到 inet_bind_hashbucket 结构体中的 chain 链表中
+ * net/ipv4/inet_connection_sock.c
+ * Allocate and initialize a new local port bind bucket.
+ * The bindhash mutex for snum's hash chain must be held here.
+ */
+struct inet_bind_bucket *inet_bind_bucket_create(struct kmem_cache *cachep,
+                         struct net *net,
+                         struct inet_bind_hashbucket *head,
+                         const unsigned short snum,
+                         int l3mdev)
+{
+    struct inet_bind_bucket *tb = kmem_cache_alloc(cachep, GFP_ATOMIC);
+
+    if (tb) {
+        write_pnet(&tb->ib_net, net);
+        tb->l3mdev    = l3mdev;
+        tb->port      = snum;
+        tb->fastreuse = 0;
+        tb->fastreuseport = 0;
+        // #define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL)
+        INIT_HLIST_HEAD(&tb->owners);
+        // 使用链表的头插法，将 tb->node 插入到 head->chain 中
+        hlist_add_head(&tb->node, &head->chain);
+    }
+    return tb;
+}
+
+// 将 n 插入到 h 与 h->first 之间，其实就是使用链表头插法
+static inline void hlist_add_head(struct hlist_node *n, struct hlist_head *h) {
+	struct hlist_node *first = h->first;
+	n->next = first;
+	if (first)
+		first->pprev = &n->next;
+	WRITE_ONCE(h->first, n);
+	n->pprev = &h->first;
+}
+
+/* 哈希表与 socket 相互建立联系。 */
+// 使用头插法，将 sock 结构体插入到 inet_bind_bucket 的 owners 链表中
+void inet_bind_hash(struct sock *sk, struct inet_bind_bucket *tb, const unsigned short snum) {
+    inet_sk(sk)->inet_num = snum;
+    sk_add_bind_node(sk, &tb->owners);
+    inet_csk(sk)->icsk_bind_hash = tb;
+}
+
+static inline void sk_add_bind_node(struct sock *sk, struct hlist_head *list) {
+    hlist_add_head(&sk->sk_bind_node, list);
+}
+```
+
+#### 3.3 inet_bind 函数分析
+
+```c{.line-numbers}
+int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
+{
+    struct sock *sk = sock->sk;
+    int err;
+
+    /* If the socket has its own bind function then use it. (RAW) */
+    // 如果有协议自定义的 bind 函数，那么调用自定义的 bind 函数
+    if (sk->sk_prot->bind) {
+        return sk->sk_prot->bind(sk, uaddr, addr_len);
+    }
+
+    // 传入的参数是否有误
+    if (addr_len < sizeof(struct sockaddr_in))
+        return -EINVAL;
+
+    /* BPF prog is run before any checks are done so that if the prog
+     * changes context in a wrong way it will be caught.
+     */
+    err = BPF_CGROUP_RUN_PROG_INET4_BIND(sk, uaddr);
+    if (err)
+        return err;
+
+    return __inet_bind(sk, uaddr, addr_len, false, true);
+}
+
+/* Sockets 0-1023 can't be bound to unless you are superuser */
+#define PROT_SOCK	1024
+
+int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
+		bool force_bind_address_no_port, bool with_lock) {
+    //省略代码......
+
+    // 检测 AF_INET 的兼容性
+    if (addr->sin_family != AF_INET) {
+        /* Compatibility games : accept AF_UNSPEC (mapped to AF_INET)
+         * only if s_addr is INADDR_ANY.
+         */
+        err = -EAFNOSUPPORT;
+        if (addr->sin_family != AF_UNSPEC || addr->sin_addr.s_addr != htonl(INADDR_ANY))
+            goto out;
+    }
+
+    //省略代码.....
+
+    snum = ntohs(addr->sin_port);
+    err = -EACCES;
+    // 如果端口号 snum 小于 1024（inet_prot_sock 会返回一个宏，PROT_SOCK，也就是 1024
+    // 需要检测是否有 CAP_NET_BIND_SERVICE 权限，CAP_NET_BIND_SERVICE 是指 Linux 系统中的一种特殊权限，用于允许一个非特权用户进程绑定到小于 1024 的网络端口。
+    if (snum && snum < inet_prot_sock(net) && !ns_capable(net->user_ns, CAP_NET_BIND_SERVICE))
+        goto out;
+
+    //省略代码..... 
+    // 多播和广播地址处理
+    inet->inet_rcv_saddr = inet->inet_saddr = addr->sin_addr.s_addr;
+    if (chk_addr_ret == RTN_MULTICAST || chk_addr_ret == RTN_BROADCAST)
+        inet->inet_saddr = 0;  /* Use device */
+
+    /* Make sure we are allowed to bind here. */
+    if (snum || !(inet->bind_address_no_port || force_bind_address_no_port)) {
+        if (sk->sk_prot->get_port(sk, snum)) {
+            inet->inet_saddr = inet->inet_rcv_saddr = 0;
+            err = -EADDRINUSE;
+            goto out_release_sock;
+        }
+        err = BPF_CGROUP_RUN_PROG_INET4_POST_BIND(sk);
+        if (err) {
+            inet->inet_saddr = inet->inet_rcv_saddr = 0;    
+            goto out_release_sock;
+        }
+    }
+
+    //省略代码......
+    
+    inet->inet_sport = htons(inet->inet_num);
+    inet->inet_daddr = 0;
+    inet->inet_dport = 0;
+    sk_dst_reset(sk);
+    err = 0;
+out_release_sock:
+    if (with_lock)
+        release_sock(sk);
+out:
+    return err;
+}
+
+static inline int inet_prot_sock(struct net *net) {
+	return PROT_SOCK;
+}
+```
