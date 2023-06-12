@@ -200,11 +200,13 @@ good bye
 
 ## 四、客户端与服务器异常情况
 
-### 1.accept 返回前连接中止
+### 1.accept 函数
+
+#### 1.1 accept 返回前连接中止
 
 这里，三路握手完成从而连接建立之后，客户 TCP 却发送了一个 RST（复位）。**在服务器端看来，就在该连接已由 TCP 排队，等着服务器进程调用 accept 的时候 RST 到达。稍后，服务器进程调用 accept**。
 
-模拟这种情形的一个简单方法就是：启动服务器，让它调用 socket、bind 和 listen，然后在调用 accept 之前睡眠一小段时间。在服务器进程睡眠时，启动客户，让它调用 socket 和 connect。一旦 connect 返回，就设置 SO＿LINGER 套接字选项以产生这个 RST，然后终止。
+模拟这种情形的一个简单方法就是：启动服务器，让它调用 socket、bind 和 listen，然后在调用 accept 之前睡眠一小段时间。在服务器进程睡眠时，启动客户，让它调用 socket 和 connect。**一旦 connect 返回，就设置 SO＿LINGER 套接字选项以产生这个 RST，然后终止**。
 
 <div align="center">
     <img src="6_Socket_服务器编程难点/2.png" width="500"/>
@@ -214,7 +216,73 @@ good bye
 
 而 POSIX 指出返回的 **errno 值必须是 ECONNABORTED（"software caused connection abort"，软件引起的连接中止）**。POSIX 作出修改的理由在于：流子系统（streams subsystem）中发生某些致命的协议相关事件时，也会返回 EPROTO。要是对于由客户引起的一个已建立连接的非致命中止也返回同样的错误，那么服务器就不知道该再次调用 accept 还是不该了。换成 ECONNABORTED 错误，服务器就可以忽略它，再次调用 accept 就行。
 
-accept(2) man page 写道 `[ECONNABORTED] A connection arrived, but it was closed while waiting on the listen queue.`，即连接已到达，但在等待侦听队列时已关闭。
+accept(2) man page 写道 `[ECONNABORTED] A connection arrived, but it was closed while waiting on the listen queue.`，即连接已到达，但在侦听队列中等待时已被关闭。
+
+#### 1.2 非阻塞式 accept
+
+当有一个已完成的连接准备好被 accept 时，select 将作为可读描述符返回该连接的监听套接字。因此，如果我们使用 select 在某个监听套接字上等待一个外来连接，那就没有必要把该监听套接字设置为非阻塞，**这是因为如果 select 告诉我们该套接字上已有连接就绪，那么随后的 accept 调用不会阻塞**。
+
+不幸的是，这里存在一个可能让我们掉入陷阱的定时问题。为了查看这个问题，我们首先把 TCP 回射客户程序改写成建立连接后发送一个 RST 到服务器。下面给出了这个新版本。
+
+```c{.line-numbers}
+#include "unp.h"
+
+int main(int argc, char **argv) {
+    int sockfd;
+    struct linger ling;
+    struct sockaddr_in servaddr;
+
+    if (argc != 2) 
+        err_quit("usage: tcpcli <IPaddress>");
+    
+    sockfd = Socket(AF_INET, SOCK_STREAM, 0);
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERV_PORT);
+    Inet_pton(AF_INET, argv[1], &servaddr.sin_addr);
+
+    Connect(sockfd, (SA *) &servaddr, sizeof(servaddr));
+
+    /* cause RST to be sent on close() */
+    ling.l_onoff = 1;
+    ling.l_linger = 0;
+    Setsockopt(sockfd, SOL_SOCKET, SO_LINGER, &ling, sizeof(ling));
+    Close(sockfd);
+
+    exit(0);
+}
+```
+
+一旦连接建立，我们设置 SO_LINGER 套接字选项，把 l_onoff 标志设置为 1，把 l_linger 时间设置为 0。正如前面所述，**这样的设置导致连接被关闭时在 TCP 套接字上发送一个 RST**。我们随后关闭该套接字。
+
+我们接着修改 TCP 回射服务器程序，在 select 返回监听套接字的可读条件之后但在调用 accept 之前暂停。在下面这段代码中，以加号打头的那两行是新加的。
+
+```c{.line-numbers}
+    if (FD_ISSET(listenfd, &rset)) {
+        /* new client connection */
++       printf("listening socket readable\n");
++       sleep(5);
+        clilen = sizeof(cliaddr);
+        connfd = Accept(listenfd, (SA *) &cliaddr, &clilen);
+    }
+```
+
+这里我们是在模拟一个繁忙的服务器，它无法在 select 返回监听套接字的可读条件后就马上调用 accpet。通常情况下服务器的这种迟钝不成问题（实际上这就是要维护一个已完成连接队列的原因），但是结合上连接建立之后到达的来自客户的 RST，问题就出现了。
+
+我们在上一节指出，当客户在服务器调用 accept 之前中止某个连接时，**源自 Berkeley 的实现不把这个中止的连接返回给服务器（内核直接处理掉）**，而其他实现有些会返回 ECONNABORTED 错误，有些却返回 EPROTO 错误。考虑一个源自 Berkeley 的实现上的如下例子。
+
+- 客户建立一个连接并随后中止它；
+- select 向服务器进程返回可读条件，不过服务器要过一小段时间才调用 accept；
+- 在服务器从 select 返回到调用 accept 期间，服务器 TCP 收到来自客户的 RST；
+- **这个已完成的连接被服务器 TCP 驱除出队列**，我们假设队列中没有其他已完成的连接；
+- 服务器调用 accept，但是由于没有任何已完成的连接，服务器于是阻塞。
+
+服务器会一直阻塞在 accept 调用上，直到其他某个客户建立一个连接为止。但是在此期间，就以上面给出的服务器程序为例，服务器单纯阻塞在 accept 调用上，无法处理任何其他已就绪的描述符。本问题和拒绝服务攻击（DoS）多少有些类似，不过对于这个新的缺陷，一旦另有客户建立一个连接，服务器就会脱出阻塞中的 accept。
+
+本问题的解决办法如下。
+
+- 当使用 select 获悉某个监听套接字上何时有已完成连接准备好被 accept 时，**总是把这个监听套接字设置为非阻塞**。
+- 在后续的 accept 调用中忽略以下错误：EWOULDBLOCK（源自 Berkeley 的实现，客户中止连接时）、ECONNABORTED（POSIX 实现，客户中止连接时）、EPROTO（SVR4 实现，客户中止连接时）和 EINTR（如果有信号被捕获）。
 
 ### 2.服务器进程终止/崩溃
 
