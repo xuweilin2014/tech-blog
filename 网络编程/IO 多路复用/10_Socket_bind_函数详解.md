@@ -721,12 +721,12 @@ struct inet_bind_bucket *inet_bind_bucket_create(struct kmem_cache *cachep,
 
 // 将 n 插入到 h 与 h->first 之间，其实就是使用链表头插法
 static inline void hlist_add_head(struct hlist_node *n, struct hlist_head *h) {
-	struct hlist_node *first = h->first;
-	n->next = first;
-	if (first)
-		first->pprev = &n->next;
-	WRITE_ONCE(h->first, n);
-	n->pprev = &h->first;
+    struct hlist_node *first = h->first;
+    n->next = first;
+    if (first)
+        first->pprev = &n->next;
+    WRITE_ONCE(h->first, n);
+    n->pprev = &h->first;
 }
 
 /* 哈希表与 socket 相互建立联系。 */
@@ -769,13 +769,14 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 
     return __inet_bind(sk, uaddr, addr_len, false, true);
 }
-
+```
+```c{.line-numbers}
 /* Sockets 0-1023 can't be bound to unless you are superuser */
-#define PROT_SOCK	1024
+#define PROT_SOCK    1024
 
 int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
-		bool force_bind_address_no_port, bool with_lock) {
-    //省略代码......
+        bool force_bind_address_no_port, bool with_lock) {
+    // 省略代码......
 
     // 检测 AF_INET 的兼容性
     if (addr->sin_family != AF_INET) {
@@ -787,7 +788,7 @@ int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
             goto out;
     }
 
-    //省略代码.....
+    // 省略代码.....
 
     snum = ntohs(addr->sin_port);
     err = -EACCES;
@@ -796,13 +797,17 @@ int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
     if (snum && snum < inet_prot_sock(net) && !ns_capable(net->user_ns, CAP_NET_BIND_SERVICE))
         goto out;
 
-    //省略代码..... 
+    // 省略代码..... 
     // 多播和广播地址处理
     inet->inet_rcv_saddr = inet->inet_saddr = addr->sin_addr.s_addr;
     if (chk_addr_ret == RTN_MULTICAST || chk_addr_ret == RTN_BROADCAST)
         inet->inet_saddr = 0;  /* Use device */
 
     /* Make sure we are allowed to bind here. */
+    // bind_address_no_port 是在 do_ip_setsockopt 函数中设置，如果用户设置了 IP_BIND_ADDRESS_NO_PORT 选项，那么就会将 inet->bind_address_no_port设置为 1
+    // IP_BIND_ADDRESS_NO_PORT 这个标志位其实就是告诉系统: "socket 需要绑定某个网卡并且接下来要去 connect, 你不要给我绑定端口, 端口到连接的时候再分配".
+    // 如果端口 snum 不为 0，直接进入到 if 语句块中，调用 get_port 函数来设置和校验端口
+    // 如果端口 snum 为 0，这时由于我们没有设置 bind_address_no_port 选项，而 force_bind_address_no_port 直接被赋值为 false，因此也会进入 if 语句块，调用 get_port 方法
     if (snum || !(inet->bind_address_no_port || force_bind_address_no_port)) {
         if (sk->sk_prot->get_port(sk, snum)) {
             inet->inet_saddr = inet->inet_rcv_saddr = 0;
@@ -816,7 +821,7 @@ int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
         }
     }
 
-    //省略代码......
+    // 省略代码......
     
     inet->inet_sport = htons(inet->inet_num);
     inet->inet_daddr = 0;
@@ -831,6 +836,358 @@ out:
 }
 
 static inline int inet_prot_sock(struct net *net) {
-	return PROT_SOCK;
+    return PROT_SOCK;
 }
 ```
+
+inet_bind 与 __inet_bind 这两个函数主要做了两个操作，一是检测是否允许 bind，二是获取可用的端口号。这边值得注意的是。如果我们设置需要 bind 的端口号为 0，那么 Kernel 会帮我们随机选择一个可用的端口号来进行 bind！
+
+```c{.line-numbers}
+// 让系统随机选择可用端口号
+sock_addr.sin_port = 0;
+call_err=bind(sockfd_server,(struct sockaddr*)(&sock_addr),sizeof(sock_addr));
+```
+
+让我们看下 inet_bind 的流程：
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/8.png" width="500"/>
+</div>
+
+值得注意的是，由于对于 <1024 的端口号需要 CAP_NET_BIND_SERVICE, 我们在监听 80 端口号 (例如启动 nginx 时候), 需要使用 root 用户或者赋予这个可执行文件 CAP_NET_BIND_SERVICE 权限。
+
+```shell
+use root 
+ or
+setcap cap_net_bind_service=+eip ./nginx 
+```
+
+#### 3.4 inet_csk_get_port 函数
+
+```c{.line-numbers}
+/* 
+ * Obtain a reference to a local port for the given sock,
+ * if snum is zero it means select any available local port.
+ * We try to allocate an odd port (and leave even ports for connect())
+ */
+int inet_csk_get_port(struct sock *sk, unsigned short snum)
+{
+    // 当前待绑定的 sock 是否具有 reuse 条件：
+    // 具体要求为该 sock 开启了 reuseaddr 并且该 sock 状态不是 TCP_LISTEN
+    bool reuse = sk->sk_reuse && sk->sk_state != TCP_LISTEN;
+    struct inet_hashinfo *hinfo = sk->sk_prot->h.hashinfo;
+    int ret = 1, port = snum;
+    struct inet_bind_hashbucket *head;
+    struct net *net = sock_net(sk);
+    struct inet_bind_bucket *tb = NULL;
+
+    /* 如果传入的端口为 0，内核从合法的端口范围内，自动分配一个端口给 socket。 */
+    /* 内核自己选的端口无需判断冲突，直接 goto success */
+    if (!port) {
+        head = inet_csk_find_open_port(sk, &tb, &port);
+        if (!head)
+            return ret;
+        if (!tb)
+            goto tb_not_found;
+        goto success;
+    }
+
+    // 使用 inet_bhashfn 函数与端口号计算出 hash 索引，然后从哈希表中取出该索引上的 inet_bind_hashbucket 结构体
+    // inet_bind_hashbucket 持有一个链表，这个链表是由多个 inet_bind_bucket 组成的
+    head = &hinfo->bhash[inet_bhashfn(net, port, hinfo->bhash_size)];
+    spin_lock_bh(&head->lock);
+
+    // 遍历 inet_bind_hashbucket 持有的链表上的每一个 inet_bind_bucket
+    // 找到 port一致、网络命名空间一致、l3mdev一致的 inet_bind_bucket 结构体
+    // inet_bind_bucket 这个结构体有一个 owners 成员, owners 是一个 以 sock 为元素组成的链表。
+    // 这个链表上每个 sock 的 port 都是一样的，网络命名空间也是一致的。 但是 ip 不一定一样
+    inet_bind_bucket_for_each(tb, &head->chain)
+        if (net_eq(ib_net(tb), net) && tb->port == port)
+            goto tb_found;
+tb_not_found:
+    /* 如果哈希表里没有 inet_bind_bucket，创建一个对应的结构体，并添加到 inet_bind_hashbucket 结构体中的 chain 链表中 */
+    tb = inet_bind_bucket_create(hinfo->bind_bucket_cachep, net, head, port);
+    if (!tb)
+        goto fail_unlock;
+tb_found:
+    // 如果找到了 inet_bind_bucket 结构体，判断要绑定的地址是否会发生冲突
+    // 因为 inet_bind_bucket 的 owners 链表中所有的 sock 结构体的端口号相同，必须要判定是否会发生冲突
+    if (!hlist_empty(&tb->owners)) {
+        // 如果 sk 强制 reuse_addr，直接绑定，不判断冲突
+        // 注意这个跟用户设置 SO_REUSEADDR 无关
+        if (sk->sk_reuse == SK_FORCE_REUSE)
+            goto success;
+
+        // 使用 inet_bind_bucket 的 fastreuse 等标志快速判断是否复用，尽量避免遍历 sock 链表来判断
+        // 先判断 SO_REUSEADDR 选项，再判断 SO_REUSEPORT 选项
+        if ((tb->fastreuse > 0 && reuse) || sk_reuseport_match(tb, sk))
+            goto success;
+        // 调用 inet_csk_bind_conflict 去遍历 sock 链表判断是否冲突
+        if (inet_csk_bind_conflict(sk, tb, true, true))
+            goto fail_unlock;
+    }
+success:
+    // 重新设置 tb 上的 fastreuse 和 fastreuseport 两个标志位
+    inet_csk_update_fastreuse(tb, sk);
+
+    if (!inet_csk(sk)->icsk_bind_hash)
+        /* 将 socket 与哈希表绑定。 */
+        /* 使用头插法，将 sock 结构体插入到 inet_bind_bucket 的 owners 链表中 */
+        inet_bind_hash(sk, tb, port);
+    WARN_ON(inet_csk(sk)->icsk_bind_hash != tb);
+    ret = 0;
+
+fail_unlock:
+    spin_unlock_bh(&head->lock);
+    return ret;
+}
+```
+
+看一小段代码：
+
+```c{.line-numbers}
+if ((tb->fastreuse > 0 && reuse) || sk_reuseport_match(tb, sk))
+    goto success;
+```
+
+这里使用了 inet_bind_bucket 的 fastreuse 成员来判断，fastreuse 是一个标志位，它标志着当前是否支持 SO_REUSEADDR。每当向 sock 结构体里面插入一个 sock 之后，fastreuse 就会更新标志。**实际上，只要当前 sock 链表上的所有的 sock 都开启了 SO_REUSEADDR 并且所有 sock 都不是 TCP_LISTEN 状态，那么这个 fastreuse 就是 true**（只要套接字都开启了 SO_REUSEADDR 以及不处于 LISTEN 状态，那么多个套接字可以绑定到同一个 ip:port 地址）。只要一直维持好这个标志位的值，就可以快速判断是否能复用地址，而不需要再去依次遍历 sock 链表上的每一个 sock。这个优化是很利于效率提升的。
+
+sk_reuseport_match 这个函数效果是一样的，其实就是利用 fastreuseport 这个标志位，快速判断是否支持 REUSEPORT。注意这里有个条件会判断 uid。这表示尽管开启了 REUSERPORT，但是如不是同一个 EUID 的话也会 bind 失败。内核这么做的目的这主要是为了防止端口劫持。`sk_reuseport_match` 主要判断当前 inet_bind_bucket 的 fastreuseport 标志位、要绑定的 sk_reuseport 标志位、【上一个被添加到 owners 链表中】并且【开启了 SO_REUSEPORT 选项】的 sock 和当前 sock 的 uid 以及地址是否相等。`sk_reuseport_match` 函数主要用于 REUSEPORT 快速检测。
+
+`tb->fastreuseport` 和 `tb->fastreuse` 这两个值的具体设置由函数 `inet_csk_update_fastreuse` 来完成。
+
+```c{.line-numbers}
+
+#define FASTREUSEPORT_ANY    1
+#define FASTREUSEPORT_STRICT    2
+
+static inline int sk_reuseport_match(struct inet_bind_bucket *tb, struct sock *sk) {
+    kuid_t uid = sock_i_uid(sk);
+
+    // inet_bind_bucket 中的 fastreuseport 为 0，说明 owners 链表中存在 sock 结构体没有开启 SO_REUSEPORT
+    if (tb->fastreuseport <= 0)
+        return 0;
+    // 新 sock 没开启 SO_REUSEPORT 直接冲突
+    if (!sk->sk_reuseport)
+        return 0;
+    if (rcu_access_pointer(sk->sk_reuseport_cb))
+        return 0;
+    // tb->fastuid 是在 inet_csk_update_fastreuse 中被设置
+    // 其实就是【上一个被添加到 owners 链表中】并且【开启了 SO_REUSEPORT 选项】的 sock 中 uid 的值
+    if (!uid_eq(tb->fastuid, uid))
+        return 0;
+    // 如果 fastreuseport 为 FASTREUSEPORT_ANY，说明现在 owners 链表中只有一个 sock 结构，并且开启了 SO_REUSEPORT
+    // 快速判断通过，可以直接添加当前要绑定的 sock 到 owners 链表中
+    if (tb->fastreuseport == FASTREUSEPORT_ANY)
+        return 1;
+
+    // tb->fast_rcv_saddr 其实也是【上一个被添加到 owners 链表中】并且【开启了 SO_REUSEPORT 选项】的 sock 中 sk_rcv_saddr 的值    
+    // 执行到这一步，说明当前 sock 也开起来 SO_REUSEPORT 选项
+    // 如果 ipv4_rcv_saddr_equal 返回 True，说明当前 sock 和上一个已经绑定的 sock 地址相同，快速判断成功（都有 SO_REUSEPORT，以及处在同一用户组中）
+    return ipv4_rcv_saddr_equal(tb->fast_rcv_saddr, sk->sk_rcv_saddr, ipv6_only_sock(sk), true, false);
+}
+
+/* 
+ * match_sk*_wildcard == true:  0.0.0.0 equals to any IPv4 addresses
+ * match_sk*_wildcard == false: addresses must be exactly the same, i.e. 0.0.0.0 only equals to 0.0.0.0
+ */
+static bool ipv4_rcv_saddr_equal(__be32 sk1_rcv_saddr, __be32 sk2_rcv_saddr, bool sk2_ipv6only, bool match_sk1_wildcard,
+                 bool match_sk2_wildcard) {
+    if (!sk2_ipv6only) {
+        // 如果地址完全相等，192.168.15.7 == 192.168.15.7
+        if (sk1_rcv_saddr == sk2_rcv_saddr)
+            return true;
+        // 如果地址不完全相等，如果 match_sk1_wildcard 开启了通配符匹配，且 sk1_rcv_saddr 为通配符 0.0.0.0（实际上就是 0），也返回 True
+        // 对于 match_sk2_wildcard 也是同理
+        return (match_sk1_wildcard && !sk1_rcv_saddr) || (match_sk2_wildcard && !sk2_rcv_saddr);
+    }
+    return false;
+}
+```
+
+如果快速判断没有通过，那么就会进入 `inet_csk_bind_conflict` 函数。`inet_csk_bind_conflict` 函数其实本质就是遍历 sock 链表，判断是否有冲突。之前讲过，`tb->fastreuseport` 和 `tb->fastreuse` 这两个值的具体设置由函数 `inet_csk_update_fastreuse` 来完成。
+
+```c{.line-numbers}
+void inet_csk_update_fastreuse(struct inet_bind_bucket *tb, struct sock *sk) {
+    kuid_t uid = sock_i_uid(sk);
+    // 当前待绑定的 sock 是否具有 reuse 条件：
+    // 具体要求为该 sock 开启了 reuseaddr 并且该 sock 状态不是 TCP_LISTEN
+    bool reuse = sk->sk_reuse && sk->sk_state != TCP_LISTEN;
+
+    // 如果 inet_bind_bucket 结构体中的 owners 链表为空（即还没有 sock 结构体）
+    if (hlist_empty(&tb->owners)) {
+        // 则直接设置 inet_bind_bucket 结构体中 fastreuse 参数为要绑定的 sock 的 reuse 条件
+        tb->fastreuse = reuse;
+        // 如果要绑定的 sock 结构体设置了 SO_REUSEPORT 选项，那么设置 fastreuseport 为 FASTREUSEPORT_ANY
+        // 在后面调用 sk_reuseport_match 函数判断链表是否有端口冲突时，会检查 FASTREUSEPORT_ANY，
+        // 在要绑定的 sock 自身设置了 SO_REUSEPORT 选项，并且处于同一个用户组时，sk_reuseport_match 直接返回 True，表示可以绑定
+        if (sk->sk_reuseport) {
+            tb->fastreuseport = FASTREUSEPORT_ANY;
+            tb->fastuid = uid;
+            tb->fast_rcv_saddr = sk->sk_rcv_saddr;
+            tb->fast_ipv6_only = ipv6_only_sock(sk);
+            tb->fast_sk_family = sk->sk_family;
+        } else {
+            // 如果要绑定的 sock 没有设置 SO_REUSEPORT 选项，那么 fastreuseport 被设置为 0
+            tb->fastreuseport = 0;
+        }
+
+    // 如果 inet_bind_bucket 结构体中的 owners 链表不为空
+    } else {
+        // 如果要绑定的 sock 自身不满足 reuse 条件，就把 inet_bind_bucket 结构体中的 fastreuse 设置为 0
+        if (!reuse)
+            tb->fastreuse = 0;
+        
+        // 如果要绑定的 sock 自身设置了 SO_REUSEPORT 选项    
+        if (sk->sk_reuseport) {
+            /* We didn't match or we don't have fastreuseport set on the tb, but we have sk_reuseport set on this socket
+             * and we know that there are no bind conflicts with
+             * this socket in this tb（但是此 sock 还是被添加到 tb 的 owners 链表中，而没有发生冲突）, so reset our tb's reuseport
+             * settings so that any subsequent sockets that match our current socket will be put on the fast path.
+             *
+             * If we reset we need to set FASTREUSEPORT_STRICT so we do extra checking for all subsequent sk_reuseport socks.
+             */
+            if (!sk_reuseport_match(tb, sk)) {
+                tb->fastreuseport = FASTREUSEPORT_STRICT;
+                tb->fastuid = uid;
+                tb->fast_rcv_saddr = sk->sk_rcv_saddr;
+                tb->fast_ipv6_only = ipv6_only_sock(sk);
+                tb->fast_sk_family = sk->sk_family;
+            }
+        } else {
+            tb->fastreuseport = 0;
+        }
+    }
+}
+```
+
+#### 3.5 端口冲突
+
+在介绍如何判定端口冲突之前，需要先介绍 sock 结构体中的两个属性：`sk_reuse` 和 `sk_reuseport`，它们最开始在 `setsockopt` 函数中被实现：
+
+```c{.line-numbers}
+int sock_setsockopt(struct socket *sock, int level, int optname, sockptr_t optval, unsigned int optlen) {
+
+    struct so_timestamping timestamping;
+    struct sock_txtime sk_txtime;
+    struct sock *sk = sock->sk;
+    int val;
+    int valbool;
+
+    if (copy_from_sockptr(&val, optval, sizeof(val)))
+        return -EFAULT;
+
+    valbool = val ? 1 : 0;
+    lock_sock(sk);
+
+    switch (optname) {
+    // .......
+        case SO_REUSEADDR:
+            sk->sk_reuse = (valbool ? SK_CAN_REUSE : SK_NO_REUSE);
+            break;
+        case SO_REUSEPORT:
+            sk->sk_reuseport = valbool;
+            break;
+    // .......
+    }
+
+}
+```
+
+struct socket 是内核对 socket 结构体的封装，这里只需要知道他与我们用户代码中拿到的 socket_fd 是一一对应的就行了。这里其实实现很简单，仅仅是把 sock 结构体的成员值就行了：例如设置了 SO_REUSEADDR，则 sk->sk_reuse 设为 SK_CAN_REUSE；如设置了 SO_REUSEPORT，则设置 sk->re_reuseport。
+
+冲突的必要：新旧 socket 都绑定在相同设备上，而且IP地址/端口相同。这个判断端口冲突的逻辑，有点烧脑，主要检查两个选项场景： SO_REUSEADDR 和 SO_REUSEPORT。先检查 SO_REUSEADDR 的使用场景，再检查 SO_REUSEPORT 的使用场景。
+
+1. SO_REUSEADDR 是为了解决前一个 socket 处于 TCP_TIME_WAIT 没完全退出的问题。
+2. SO_REUSEPORT 是为了解决惊群问题的，允许多个进程共同使用同一个 IP 地址/端口。
+
+```c{.line-numbers}
+static int inet_csk_bind_conflict(const struct sock *sk,
+                  const struct inet_bind_bucket *tb,
+                  bool relax, bool reuseport_ok)
+{
+    struct sock *sk2;
+    bool reuse = sk->sk_reuse;
+    bool reuseport = !!sk->sk_reuseport && reuseport_ok;
+    kuid_t uid = sock_i_uid((struct sock *)sk);
+
+    /*
+     * Unlike other sk lookup places we do not check for sk_net here, since _all_ the socks listed
+     * in tb->owners list belong to the same net - the one this bucket belongs to.
+     */
+
+    // 遍历 sock 链表上每一个 sock，一旦提前 break 退出，那就说明有冲突，此时无法 bind，如果没有提前退出，最后 sk2 == NULL, 此时说明不存在冲突，可以 bind
+    /* 遍历已经 bind 端口的 socket. */
+    sk_for_each_bound(sk2, &tb->owners) {
+        /* 如果 sk2 也绑定到同一个设备上，那么进行检查。 */
+        if (sk != sk2 && (!sk->sk_bound_dev_if || !sk2->sk_bound_dev_if || sk->sk_bound_dev_if == sk2->sk_bound_dev_if)) {
+            /* 当前或者前一个 socket 没有设置 SO_REUSEADDR，或者前一个 socket 已经处于 listen 状态了。 */
+            if ((!reuse || !sk2->sk_reuse || sk2->sk_state == TCP_LISTEN) &&
+                /* 当前或者前一个 socket 没有设置 SO_REUSEPORT */
+                (!reuseport || !sk2->sk_reuseport || rcu_access_pointer(sk->sk_reuseport_cb) ||
+                /* 或者 sk2 不处于 TCP_TIME_WAIT 状态并且两个 uid 不一样。  */
+                (sk2->sk_state != TCP_TIME_WAIT && !uid_eq(uid, sock_i_uid(sk2))))) {
+                /* 两个地址一样。 */
+                if (inet_rcv_saddr_equal(sk, sk2, true))
+                    break;
+            }
+            if (!relax && reuse && sk2->sk_reuse && sk2->sk_state != TCP_LISTEN) {
+                if (inet_rcv_saddr_equal(sk, sk2, true))
+                    break;
+            }
+        }
+    }
+    return sk2 != NULL;
+}
+```
+
+我们来捋一下上面的冲突条件，结果如下：
+
+- 当前或者前一个 socket 都开启 `REUSRADDR`，并且前一个 sock 不是 `TCP_LISTEN` 状态。这种情况下无论是否支持 `REUSEPORT` 都不会产生冲突。
+- 未开启 `REUSEADDR` 或者有存在 `TCP_LISTEN` 状态的 sock 情况下，这时候分为三种情况：
+  - 当前或者前一个 socket 没有设置 `SO_REUSEPORT，` 直接冲突
+  - 均开启 `REUSEPORT`, 但是存在某个 sock 状态不是 `TCP_TIME_WAIT，并且` euid 不同。冲突
+  - 其他情况不冲突
+
+注意这里有个条件，不是 TCP_TIME_WAIT 并且 euid 不同才会冲突。**当然以上发生冲突的情况还有一个前提是 ip 地址也是一样的，如果 ip 不一样是永远不可能发生冲突的**。
+
+上面的代码有点绕，笔者就讲一下，对于我们日常开发要关心什么。 我们在上面的 bind 里面经常见到 sk_reuse 和 sk_reuseport 这两个 socket 的 Flag。这两个 Flag 能够决定是否能够 bind (绑定) 成功。这两个 Flag 的设置在 C 语言里面如下代码所示:
+
+```c
+ setsockopt(sockfd_server, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+ setsockopt(sockfd_server, SOL_SOCKET, SO_REUSEPORT, &(int){ 1 }, sizeof(int));
+```
+
+在之前的源码里面，我们看到判断 bind 是否冲突的时候，有这么一个分支:
+
+```c
+(!reuse || !sk2->sk_reuse || sk2->sk_state == TCP_LISTEN /* 暂忽略reuseport */){
+	// 即有一方没有设置
+}
+```
+
+如果 sk2 (即已 bind 的 socket) 是 TCP_LISTEN 状态或者，sk2 和新 sk 两者之一没有设置_REUSEADDR 的时候，可以判断为冲突。我们可以得出，如果原 sock 和新 sock 都设置了 SO_REUSEADDR 的时候，并且原 sock 不是 Listen 状态，都可以绑定成功，甚至 ESTABLISHED 状态也可以！
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/9.png" width="500"/>
+</div>
+
+这个在我们平常工作中，最常见的就是原 sock 处于 TIME_WAIT 状态，这通常在我们关闭 Server 的时候出现，如果不设置 SO_REUSEADDR, 则会绑定失败，进而启动不来服务。而设置了 SO_REUSEADDR, 由于不是 TCP_LISTEN, 所以可以成功。
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/10.png" width="500"/>
+</div>
+
+SO_REUSEPORT 是 Linux 在 3.9 版本引入的新功能。在海量高并发连接的创建时候，由于正常的模型是单线程 listener 分发，无法利用多核优势，这就会成为瓶颈。我们看下一般的 Reactor 线程模型:
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/11.png" width="500"/>
+</div>
+
+明显的其单线程 listen/accept 会存在瓶颈 (如果采用多线程 epoll accept，则会惊群，加 WQ_FLAG_EXCLUSIVE 可以解决一部分)，尤其是在采用短链接的情况下。鉴于此，Linux 增加了 SO_REUSEPORT, 让我们在多次 bind 监听相同 ip:port 地址的时候，如果设置了 SO_REUSEPORT 的时候不会报错，也就是让我们有个多线程 (进程) bind/listen 的能力。
+
+<div align="center">
+    <img src="10_Socket_bind_函数详解/12.png" width="600"/>
+</div>
+
+直接在内核层面做负载均衡，将 accept 的任务分散到不同的线程的不同 socket 上 (Sharding)，毫无疑问可以多核能力，大幅提升连接成功后的 socket 分发能力。
