@@ -65,7 +65,7 @@ while (!m_bQuitFlag)
 
 这个唤醒 fd 在 Linux 操作系统上可以通过以下几种方法实现：
 
-#### 3.1.使用**管道 fd（pipe）**
+#### 1.使用管道 fd（pipe）
 
 创建一个管道，将管道的一端绑定到 epollfd 上，需要唤醒时，向管道的另一端写入一个字节，工作线程立即被唤醒。
 
@@ -241,7 +241,11 @@ bool EventLoop::handleRead()
 }
 ```
 
-EventLoop::handleRead() 函数可以在触发唤醒 fd 的读事件后调用。
+EventLoop::handleRead() 函数可以在触发唤醒 fd 的读事件后调用。以上的整个流程如下所示：
+
+<div align="center">
+    <img src="8_one_thread_one_loop_思想/1.png" width="420"/>
+</div>
 
 #### 7.handle_other_things() 方法的逻辑
 
@@ -269,7 +273,7 @@ void EventLoop::handle_other_things()
 
 pendingOtherThingFunctors_ 这里是一个类成员变量，这里的实现使用了 std::vector，工作线程本身会从这个容器中取出任务来执行，这里我们将任务封装成一个个的函数对象，从容器中取出来直接执行就可以了。这里使用了一个特殊的小技巧，为了减小锁 （mutex_，也是成员变量，与 pendingOtherThingFunctors_ 作用域一致）的作用范围，提高程序执行效率，我们使用了一个局部变量 otherThingFunctors 将成员变量 pendingOtherThingFunctors_ 的中的数据倒换进这个局部变量中。
 
-添加 "other_things"，可以在任意线程添加，也就是说可以在网络线程之外的线程中添加任务，因此可能涉及到多个线程同时操作 pendingOtherThingFunctors_ 对象，因此需要对其使用锁（这里是 mutex_）进行保护。添加 "other_things" 代码如下：
+添加 "other_things"，**可以在任意线程添加（包括网络 I/O 线程与网络 I/O 之外的线程），也就是说可以在网络线程之外的线程中添加任务**，因此可能涉及到多个线程同时操作 pendingOtherThingFunctors_ 对象，因此需要对其使用锁（这里是 mutex_）进行保护。添加 "other_things" 代码如下：
 
 ```cpp{.line-numbers}
 void EventLoop::queueInLoop(const Functor& cb)
@@ -306,6 +310,25 @@ while (!m_bQuitFlag)
 }
 ```
 
+另外，handle_other_things() 系列的方法可以在 one thread one loop 结构中的 while 循环内部的任意位置，不一定非要放在 handle_io_events 函数后面，我们有时也称 handle_other_things() 为钩子函数（Hook Functions），例如：
+
+```cpp{.line-numbers}
+while (!m_bQuitFlag)
+{
+    handle_other_things1();
+
+	epoll_or_select_func();
+
+    handle_other_things2();
+
+	handle_io_events();
+	
+	handle_other_things3();
+	
+	// 根据实际需要可以有更多的 handle_other_things()
+}
+```
+
 #### 8.带上定时器的程序结构
 
 定时器是程序常用的一个功能之一，上述结构中可以在线程循环执行流中加上检测和处理定时器事件的逻辑，添加的位置一般放在程序循环执行流的第一步。加上定时器逻辑后程序结构变为：
@@ -324,3 +347,9 @@ while (!m_bQuitFlag)
 ```
 
 这里需要注意的是，epoll_or_select_func() 中使用 IO 复用函数的超时时间尽量不要大于 check_and_handle_timers() 中所有定时器中的最小时间间隔，以免定时器逻辑处理延迟较多。
+
+#### 9.one thread one loop 的效率保障
+
+在整个 loop 结构中，为了保证各个步骤高效执行，除了 epoll_or_select_func 步骤中的 I/O 复用函数可能会造成等待，**在任何其他步骤中都不能有阻塞整个流程或者耗时的操作**。
+
+如果业务决定了在定时器逻辑（对应 check_and_handle_timers 函数）、读写事件处理逻辑（对应 handle_io_events 函数）或其他自定义逻辑（对应 handle_other_things 函数）中有耗时的操作，**就需要再开新的业务线程去处理这些耗时的操作，I/O 线程（loop 所在的线程）本身不能处理耗时的操作**。业务线程在处理耗时操作完毕后，可以将处理结果或者数据通过特定方式返回给 I/O 线程。
