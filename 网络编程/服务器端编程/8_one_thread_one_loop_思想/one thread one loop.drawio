@@ -1,0 +1,89 @@
+<mxfile host="Electron" modified="2023-06-22T11:05:38.946Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.2.8 Chrome/112.0.5615.165 Electron/24.2.0 Safari/537.36" etag="-d06YUsk54WoL4zbi2ee" version="21.2.8" type="device">
+  <diagram name="第 1 页" id="E0OqM58wUucWfDKx6ohA">
+    <mxGraphModel dx="1235" dy="731" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3300" pageHeight="4681" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-24" value="" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 8;" vertex="1" parent="1">
+          <mxGeometry x="160" y="420" width="570" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-1" value="被连接方" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="230" y="60" width="90" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-2" target="GomV5-Wkp9xQEJoRMgap-3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-2" value="&lt;b&gt;创建 listenfd&lt;br&gt;(m_wakeupFdListen)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="202.5" y="120" width="147.5" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-3" target="GomV5-Wkp9xQEJoRMgap-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-3" value="&lt;b&gt;调用bind函数绑定listenfd&lt;br&gt;(不指定端口号)&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="197.5" y="200" width="157.5" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-4" target="GomV5-Wkp9xQEJoRMgap-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-4" value="&lt;b&gt;调用listen函数启动监听操作&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="197.5" y="280" width="157.5" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-15" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.25;entryY=0;entryDx=0;entryDy=0;endArrow=none;endFill=0;dashed=1;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-5" target="GomV5-Wkp9xQEJoRMgap-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-5" value="&lt;b&gt;接受连接产生m_wakeupFdRecv&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="197.5" y="360" width="157.5" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-6" target="GomV5-Wkp9xQEJoRMgap-11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410" y="460" />
+              <mxPoint x="410" y="460" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-6" value="&lt;b&gt;m_wakeupFdRecv&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="198.75" y="450" width="152.5" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-7" value="连接方" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="568.13" y="60" width="90" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-8" target="GomV5-Wkp9xQEJoRMgap-9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-8" value="&lt;b&gt;创建 clientfd&lt;br&gt;(m_wakeupFdSend)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="531.25" y="120" width="147.5" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-9" target="GomV5-Wkp9xQEJoRMgap-10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-9" value="&lt;b&gt;调用getsockname函数获取bind到listenfd上的端口号&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="520.63" y="200" width="168.75" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-19" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.75;entryY=0;entryDx=0;entryDy=0;endArrow=none;endFill=0;dashed=1;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-10" target="GomV5-Wkp9xQEJoRMgap-11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-23" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-10" target="GomV5-Wkp9xQEJoRMgap-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-10" value="&lt;b&gt;connect 到监听 IP 地址和端口号&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="525.63" y="290" width="158.75" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="GomV5-Wkp9xQEJoRMgap-11" target="GomV5-Wkp9xQEJoRMgap-6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="490" y="480" />
+              <mxPoint x="490" y="480" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-11" value="&lt;b&gt;m_wakeupFdSend&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="536.88" y="450" width="152.5" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="GomV5-Wkp9xQEJoRMgap-22" value="&lt;b&gt;&lt;font style=&quot;font-size: 14px;&quot;&gt;一对唤醒 fd&lt;/font&gt;&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="390" y="480" width="100" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
