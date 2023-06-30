@@ -312,8 +312,7 @@ another line                            然后键入下一行文本
 str_cli: server terminated prematurely
 ```
 
-当我们键入 "another line" 时，str_cli 调用 writen，客户 TCP 接着把数据发送给服务器。
-TCP 允许这么做，因为客户 TCP 接收到 FIN 只是表示服务器进程已关闭了连接的服务器端，从而不再往其中发送任何数据而己。FIN 的接收并没有告知客户 TCP 服务器进程已经终止（虽然在本例子中它确实是终止了）。当服务器 TCP 接收到来自客户的数据时，既然先前打开那个套接字的进程已经终止，于是响应以一个 RST。
+当我们键入 "another line" 时，str_cli 调用 writen，客户 TCP 接着把数据发送给服务器。TCP 允许这么做，因为客户 TCP 接收到 FIN 只是表示服务器进程已关闭了连接的服务器端，从而不再往其中发送任何数据而己。FIN 的接收并没有告知客户 TCP 服务器进程已经终止（虽然在本例子中它确实是终止了）。当服务器 TCP 接收到来自客户的数据时，既然先前打开那个套接字的进程已经终止，于是响应以一个 RST。
 
 7. 然而客户进程看不到这个 RST，因为它在调用 writen 后立即调用 read1line，并且由于第 2 步中接收的 FIN，所调用的 readline 立即返回 0（表示 EOF）。我们的客户端此时收到 EOF，于是以出错信息 "server terminated prematurely"（服务器过早终止）退出。
 8. 当客户终止时，它所有打开着的描述符都被关闭
@@ -824,7 +823,7 @@ client 端的代码如下所示：
 
 server 端的代码如下所示：
 
-```c
+```c{.line-numbers}
     // 前面代码和 3.1 类似
     // server.c server 专门接收数据
 

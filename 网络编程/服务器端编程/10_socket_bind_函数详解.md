@@ -1146,7 +1146,7 @@ static int inet_csk_bind_conflict(const struct sock *sk,
 - 当前或者前一个 socket 都开启 `REUSRADDR`，并且前一个 sock 不是 `TCP_LISTEN` 状态。这种情况下无论是否支持 `REUSEPORT` 都不会产生冲突。
 - 当前或者前一个 socket 之一未开启 `REUSEADDR` 或者有存在 `TCP_LISTEN` 状态的 sock 情况下，这时候分为三种情况：
   - 当前或者前一个 socket 没有设置 `SO_REUSEPORT，` 直接冲突
-  - 均开启 `REUSEPORT`, 但是存在某个 sock 状态不是 `TCP_TIME_WAIT，并且` euid 不同。冲突
+  - 均开启 `REUSEPORT`, 但是存在某个 sock 状态不是 `TCP_TIME_WAIT`，并且 euid 不同。冲突
   - 其他情况不冲突
 
 注意这里有个条件，不是 TCP_TIME_WAIT 并且 euid 不同才会冲突。**当然以上发生冲突的情况还有一个前提是 ip 地址也是一样的，如果 ip 不一样是永远不可能发生冲突的**。
