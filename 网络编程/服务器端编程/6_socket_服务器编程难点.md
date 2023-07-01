@@ -16,7 +16,7 @@
 
 实现任何客户/服务器网络应用所需的所有基本步骤都可以通过 Echo Server 阐明，如果想要把这个例子扩充成其他的应用程度，只需要修改服务器对来自客户的输入处理过程。
 
-### 1. TCP 回射服务器程序：main 函数
+### 1.TCP 回射服务器程序：main 函数
 
 ```c{.line-numbers}
 int main(int argc, char **argv){
@@ -212,11 +212,99 @@ good bye
     <img src="6_Socket_服务器编程难点/2.png" width="500"/>
 </div>
 
-但是，如何处理这种中止的连接依赖于不同的实现。源自 Berkeley 的实现完全在内核中处理中止的连接，服务器进程根本看不到。然而大多数 SVR4 实现返回一个错误给服务器进程，作为 accept 的返回结果，不过错误本身取决于实现。这些 SVR4 实现返回一个 EPROTO（“protocol error”，协议错误）errno 值。
-
-而 POSIX 指出返回的 **errno 值必须是 ECONNABORTED（"software caused connection abort"，软件引起的连接中止）**。POSIX 作出修改的理由在于：流子系统（streams subsystem）中发生某些致命的协议相关事件时，也会返回 EPROTO。要是对于由客户引起的一个已建立连接的非致命中止也返回同样的错误，那么服务器就不知道该再次调用 accept 还是不该了。换成 ECONNABORTED 错误，服务器就可以忽略它，再次调用 accept 就行。
+但是，如何处理这种中止的连接依赖于不同的实现。**源自 Berkeley 的实现完全在内核中处理中止的连接，服务器进程根本看不到**。然而大多数 SVR4 实现返回一个错误给服务器进程，作为 accept 的返回结果，不过错误本身取决于实现。POSIX 指出返回的 **errno 值必须是 ECONNABORTED（"software caused connection abort"，软件引起的连接中止）**。服务器可以直接忽略 **`ECONNABORTED`** 错误，再次调用 accept 就行。
 
 accept(2) man page 写道 `[ECONNABORTED] A connection arrived, but it was closed while waiting on the listen queue.`，即连接已到达，但在侦听队列中等待时已被关闭。
+
+下面我们使用 Linux 来测试上述理论，使用的 Linux 内核版本是：**`Linux version 5.19.0-43-generic`**，客户端的代码如下所示，开启了 **`SO_LINGER`** 选项，这样调用 close 函数时，不会发送 FIN 报文，取而代之发送 RST 报文：
+
+```c{.line-numbers}
+int main() {
+
+    int cfd;
+    int counter = 10;
+    char buf[BUFSIZ];
+    unsigned int ip = 0;
+    struct linger lgr;
+
+    lgr.l_onoff = 1;
+    lgr.l_linger = 0;
+
+    // 服务器地址结构
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "127.0.0.1", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+    setsockopt(cfd, SOL_SOCKET, SO_LINGER, &lgr, sizeof(lgr));
+    connect(cfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
+
+    printf("connect successfully, now existing....\n");
+    close(cfd);
+
+    while (counter--) {
+        write(cfd, "hello\n", 6);
+        int ret = read(cfd, buf, sizeof buf);
+        write(STDOUT_FILENO, buf, ret);
+    }
+
+    return 0;
+}
+```
+
+服务端的部分代码如下所示：
+
+```c{.line-numbers}
+    clit_addr_len = sizeof(clit_addr);
+    // 模拟故障，阻塞 10s
+    sleep(10);
+    cfd = accept(lfd, (struct sockaddr *) &clit_addr, &clit_addr_len);
+
+    if (cfd < 0) {
+        if (errno == ECONNABORTED) {
+            printf("accept: connect reset by peer\n");
+        }
+        return 1;
+    }
+
+    while (1) {
+        int ret = read(cfd, buf, sizeof(buf));
+        if (errno == ECONNRESET) {
+            printf("read: connection reset by peer\n");
+            return 1;
+        }
+        write(STDOUT_FILENO, buf, ret);
+        for(int i = 0; i < ret; i++) {
+            buf[i] = toupper(buf[i]);
+        }
+        write(cfd, buf, ret);
+    }
+```
+
+最后服务端的运行结果如下所示，对于客户端连接的提前终止（发出 **`RST`** 报文），**`accept`** 函数没有抛出异常，而是正常取出连接，到了 **`read`** 函数才出现 **`ECONNABORTED`** 错误。
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
+read: connection reset by peer
+
+Process finished with exit code 1
+```
+
+使用 **`tcpdump`** 命令查看网络数据包的接受和发送情况如下所示：
+
+```shell
+xuweilin@xuweilin-virtual-machine:~/桌面$ sudo tcpdump -i 3 -nt
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on lo, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+IP 127.0.0.1.48378 > 127.0.0.1.9523: Flags [S], seq 2316230539, win 65495, options [mss 65495,sackOK,TS val 3266194383 ecr 0,nop,wscale 7], length 0
+IP 127.0.0.1.9523 > 127.0.0.1.48378: Flags [S.], seq 3778378464, ack 2316230540, win 65483, options [mss 65495,sackOK,TS val 3266194383 ecr 3266194383,nop,wscale 7], length 0
+IP 127.0.0.1.48378 > 127.0.0.1.9523: Flags [.], ack 1, win 512, options [nop,nop,TS val 3266194383 ecr 3266194383], length 0
+IP 127.0.0.1.48378 > 127.0.0.1.9523: Flags [R.], seq 1, ack 1, win 512, options [nop,nop,TS val 3266194383 ecr 3266194383], length 0
+```
+
+由此可见，对于 Linux 内核而言，如果客户端连接在 **`accept`** 函数之前终止，accept 函数不会感觉出异常，还是会从监听队列中取出连接，而不论连接处于何种状态，更不关心任何网络状况的变化。
 
 #### 1.2 非阻塞式 accept
 
@@ -871,6 +959,142 @@ hello
 
 ```
 
-当 server 既关闭了读部分，又关闭了写部分，会发送一个 FIN 报文给 client，而 client 收到 FIN 之后只能表明 server 关闭了发送通道，至于是使用 close(fd) 还是 shutdown(fd, SHUT_WR) 或者 shutdown(fd, SHUT_RDWR) 对端是不知道的。client 也并不知道 server 的读通道是否关闭，因此可以向 server 继续发送数据。因此 server 端会显示 hello 字符串（有可能会显示多个，取决于 client 在 server 调用 shutdown 之前发送了多少个 hello 字符串），并返回 client RST 报文。
+当 server 既关闭了读部分，又关闭了写部分，会发送一个 **`FIN`** 报文给 client，而 client 收到 **`FIN`** 之后只能表明 server 关闭了发送通道，至于是使用 close(fd) 还是 **`shutdown(fd, SHUT_WR)`** 或者 **`shutdown(fd, SHUT_RDWR)`** 对端是不知道的。client 也并不知道 server 的读通道是否关闭，因此可以向 server 继续发送数据。因此 server 端会显示 hello 字符串（有可能会显示多个，取决于 client 在 server 调用 shutdown 之前发送了多少个 hello 字符串），并返回 client RST 报文。
 
-当 client 继续向 server 发送数据时，内核会产生 SIGPIPE 错误。此实验结果对于 SHUT_RDWR 也同样适用。
+当 client 继续向 server 发送数据时，内核会产生 **`SIGPIPE`** 错误。此实验结果对于 **`SHUT_RDWR`** 也同样适用。
+
+## 六、主机字节序和网络字节序
+
+现代 CPU 的累加器一次都能装载（至少）4 字节（这里考虑 32 位机，下同），即一个整数。那么这 4 字节在内存中排列的顺序将影响它被累加器装载成的整数的值。这就是字节序问题。字节序分为大端字节序（big endian）和小端字节序（little endian）。大端字节序是指一个整数的高位字节存储在内存的低地址处，低位字节存储在内存的高地址处。**小端字节序则是指整数的高位字节存储在内存的高地址处，而低位字节则存储在内存的低地址处**。我们可以使用如下代码进行判断：
+
+```c{.line-numbers}
+void byteorder() {
+    union {
+        short value;
+        char union_bytes[sizeof(short )];
+    } test;
+
+    test.value = 0x0102;
+
+    if ((test.union_bytes[0] == 2) && (test.union_bytes[1] == 1)) {
+        printf("little endian\n");
+    } else if ((test.union_bytes[0] == 1) && (test.union_bytes[1] == 2)) {
+        printf("big endian\n");
+    } else {
+        printf("unknown...\n");
+    }
+}
+```
+
+**现代 PC 大多采用小端字节序，因此小端字节序又被称为主机字节序**。当格式化的数据（比如 32bit 整型数和 16bit 短整型数）在两台使用不同字节序的主机之间直接传递时，接收端必然错误地解释之。解决问题的方法是：**发送端总是把要发送的数据转化成大端字节序数据后再发送，而接收端知道对方传送过来的数据总是采用大端字节序**，所以接收端可以根据自身采用的字节序决定是否对接收到的数据进行转换（小端机转换，大端机不转换）。因此大端字节序也称为网络字节序，它给所有接收数据的主机提供了一个正确解释收到的格式化数据的保证。
+
+## 七、socket 函数
+
+下面的 socket 系统调用可以创建一个 socket：
+
+```c{.line-numbers}
+#include <sys/types.h>
+#include <sys/socket.h>
+int socket(int domain, int type, int protocol);
+```
+
+值得指出的是，自 Linux 内核版本 2.6.17 起，type 参数可以接受上述服务类型与下面两个重要的标志相与的值：**`SOCK_NONBLOCK`** 和 **`SOCK_CLOEXEC`**。它们分别表示将新创建的 socket 设为非阻塞的，以及用 fork 调用创建子进程时在子进程中关闭该 socket。接下来详细解释 **`SOCK_CLOEXEC`** 选项的作用。
+
+在实际生产中遇到一个问题，有一个进程 A，它是一个全局监控进程，监控进程 B。进程 B 是一个局部监控进程，监控 C，C 是由 B fork 出来的子进程。C 向 B 汇报，B 向 A 汇报。
+
+因为进程 A 和其他进程在不同机器上，所以所有的操作都是通过 json rpc 的远程调用执行的。假设 B 监听 11111 端口，A 通过这个端口与其通信。现在我手动 kill B，理论上的现象应该11111 端口此时无人监听，A 发 rpc call 的时候会报一个异常，rpc 连接会断掉。实际的情况是 A 会在 rpc call 上阻塞，观察 11111 端口的情况没，发现被 C 监听了。
+
+分析的结果如下：
+
+**`Linux`** 下 **`socket`** 也是文件描述符的一种，**当 B fork 进程 C 的时候，C 也会继承 B 的 11111 端口 socket 文件描述符，当 B 挂了的时候，C 就会占领监听权**。子进程以写时复制（COW，Copy-On-Write）方式获得父进程的数据空间、堆和栈副本，这其中也包括文件描述符。刚刚 fork 成功时，**父子进程中相同的文件描述符指向系统文件表中的同一项**（这也意味着他们共享同一文件偏移量）。
+
+接着，一般我们会调用 exec 执行另一个程序，此时会用全新的程序替换子进程的正文，数据，堆和栈等。此时保存文件描述符的变量当然也不存在了，我们就无法关闭无用的文件描述符了。所以通常我们会 fork 子进程后在子进程中直接执行 close 关掉无用的文件描述符，然后再执行 exec。
+
+但是在复杂系统中，有时我们 fork 子进程时已经不知道打开了多少个文件描述符（包括 socket 句柄等），这此时进行逐一清理确实有很大难度。我们期望的是能在 fork 子进程前打开某个文件句柄时就指定好："这个句柄我在 fork 子进程后执行 exec 时就关闭"。其实时有这样的方法的：即所谓的 close-on-exec。
+
+**当父进程打开文件时，只需要应用程序设置 `FD_CLOSEXEC` 标志位，则当 fork 后 exec 其他程序的时候，内核自动会将其继承的父进程 FD 关闭**。
+
+close_on_exec 另外的一大意义就是安全。比如父进程打开了某些文件，父进程 fork 了子进程，但是子进程就会默认有这些文件的读取权限，但是很多时候我们并不想让子进程有这么多的权限。试想一下这样的场景：在 Webserver 中，首先会使用 root 权限启动，以此打开 root 权限才能打开的端口、日志等文件。然后降权到普通用户，fork 出一些 worker 进程，这些进程中再进行解析脚本、写日志、输出结果等进一步操作。
+
+然而这里，就会发现隐含一个安全问题：子进程中既然继承了父进程的 FD，那么子进程中运行的脚本只需要继续操作这些 FD，就能够使用普通权限“越权”操作 root 用户才能操作的文件。系统提供的 close_on_exec 就可以有效解决这个问题。
+
+## 八、监听 socket
+
+socket 被命名之后，还不能马上接受客户端连接，**我们需要使用如下系统调用来创建一个监听队列以存放待处理的客户连接**。
+
+```c{.line-numbers}
+#include <sys/socket.h>
+int listen(int sockfd, int backlog);
+```
+
+sockfd 参数指定被监听的 socket。**`backlog`** 参数提示内核监听队列的最大长度。**监听队列的长度如果超过 backlog，服务器将不受理新的客户连接，客户端也将收到 `ECONNREFUSED` 错误信息**。在内核版本 2.2 之前的 Linux 中，backlog 参数是指所有处于半连接状态（**`SYN_RCVD`**）和完全连接状态（**`ESTABLISHED`**）的 socket 的上限。但自内核版本 2.2 之后，它只表示处于完全连接状态的 socket 的上限。**`backlog`** 参数的典型值是 5。
+
+我们使用如下代码进行验证：
+
+```c{.line-numbers}
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/wait.h>
+#include <stdbool.h>
+
+#define SERV_PORT 9523
+static bool stop = false;
+
+static void handle_term(int sig) {
+    stop = true;
+}
+
+int main() {
+
+    signal(SIGTERM, handle_term);
+
+    int lfd = 0;
+    struct sockaddr_in serv_addr;
+
+    lfd = socket(PF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        sys_err("socket error");
+    }
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    listen(lfd, 5);
+
+    while (!stop) {
+        sleep(1);
+    }
+
+    close(lfd);
+    return 0;
+}
+```
+
+运行上述 server 程序之后，在 Linux 上也同时运行多个客户端使用 **`telnet`** 连接 server 程序，最后使用 **`netstat`** 命令查看网络的连接状态：
+
+```shell
+# 重复多次 telnet 命令
+xuweilin@xuweilin-virtual-machine:~$ telnet 192.168.17.128 9523
+# 使用 netstat 命令查看网络状态
+xuweilin@xuweilin-virtual-machine:~$ netstat -nt | grep 9523
+```
+
+最后的运行结果如下所示：
+
+```c{.line-numbers}
+tcp        0      0 192.168.17.128:34968    192.168.17.128:9523     ESTABLISHED
+tcp        0      1 192.168.17.128:60908    192.168.17.128:9523     SYN_SENT   
+tcp        0      0 192.168.17.128:54288    192.168.17.128:9523     ESTABLISHED
+tcp        0      0 192.168.17.128:41828    192.168.17.128:9523     ESTABLISHED
+tcp        0      0 192.168.17.128:60894    192.168.17.128:9523     ESTABLISHED
+tcp        0      0 192.168.17.128:57410    192.168.17.128:9523     ESTABLISHED
+tcp        0      1 192.168.17.128:57288    192.168.17.128:9523     SYN_SENT   
+tcp        0      0 192.168.17.128:57908    192.168.17.128:9523     ESTABLISHED
+```
+
+在监听队列中，处于 **`ESTABLISHED`** 状态的连接只有 6 个（**`backlog + 1`**），其余连接处于 **`SYN_SENT`** 状态。
