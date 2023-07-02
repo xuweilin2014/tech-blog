@@ -199,5 +199,5 @@ while(true)
 #### 7.read 和 write 函数总结
 
 <div align="center">
-    <img src="4_Socket_Read与Write函数/1.png" width="1200"/>
+    <img src="Socket_Read与Write函数/1.png" width="1200"/>
 </div>

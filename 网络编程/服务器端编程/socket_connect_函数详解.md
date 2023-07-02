@@ -64,7 +64,7 @@ int main() {
 执行到第 20 行时，errno 变为 111，即 ECONNREFUSED，如下所示：
 
 <div align="center">
-    <img src="11_socket_connect_函数详解/1.png" width="550"/>
+    <img src="socket_connect_函数详解/1.png" width="550"/>
 </div>
 
 最后客户端输出的结果如下所示：

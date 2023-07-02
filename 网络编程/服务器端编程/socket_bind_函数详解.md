@@ -25,7 +25,7 @@ TCP 客户通常不把 IP 地址捆绑到它的套接字上。当连接套接字
 在调用 bind 函数时，可以指定 IP 地址或者端口，也可以两者都指定，也可以两者都不指定：
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/1.png" width="450"/>
+    <img src="Socket_bind_函数详解/1.png" width="450"/>
 </div>
 
 如果指定端口号为 0，那么内核就在 bind 被调用时选择一个临时端口。__然而如果指定 IP 地址为通配地址（wildcard），那么内核将等到套接字已连接 (TCP) 或已在套接字上发出数据报 (UDP) 时才选择一个本地 IP 地址__。这是因为 socket 套接字需要一个真正的 IP 地址。
@@ -496,19 +496,19 @@ server2 ：127.0.0.1:30001, bind 成功
 不开启 REUSEADDR，不开启 REUSEPORT。启动 server1 并监听。 使用 telnet 模拟客户端，当客户端连接上来后，此时 conn_sock 连接处于 ESTABLISHED 状态，而 listen_sock（监听套接字）还是处于 TCP_LISTEN 状态。使用 netstat 观察如下：
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/2.png" width="500"/>
+    <img src="Socket_bind_函数详解/2.png" width="500"/>
 </div>
 
 然后我们让服务端主动断开 TCP 连接，然后退出程序。根据 TCP 四次挥手的过程，此时 conn_sock 最终预期会进入 TCP_TIMEWAIT 状态。而 listen_sock 由于程序退出，所以 netstat 看不到了。
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/3.png" width="500"/>
+    <img src="Socket_bind_函数详解/3.png" width="500"/>
 </div>
 
 与此同时，在 TCP_TIMEWAIT 状态下赶紧启动 server2 试图绑定同一个 ip:port，观察是否能正常 bind，很遗憾，bind 失败了。
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/4.png" width="500"/>
+    <img src="Socket_bind_函数详解/4.png" width="500"/>
 </div>
 
 linux 下 TCP_TIMEWAIT 大约维持 60s 左右，等到 TCP_TIMEWAIT 状态结束后，再启动 server2，发现是能正常绑定的。也就是说，不开启 REUSEADDR，不开启 REUSEPORT。当存在处于 TCP_TIMEWAIT 的连接时时，我们不能马上对这个地址重新 bind。
@@ -559,7 +559,7 @@ bind 的核心逻辑就是将 socket 和地址端口联系起来。在实现过�
 **1) socket 的结构关系如下所示**：
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/5.png" width="1200"/>
+    <img src="Socket_bind_函数详解/5.png" width="1200"/>
 </div>
 
 **2) 哈希表**
@@ -567,7 +567,7 @@ bind 的核心逻辑就是将 socket 和地址端口联系起来。在实现过�
 glibc 的 bind 最终会调用到内核的 __inet_bind 函数。内核维持了一个绑定端口的哈希表，由于判断端口冲突。在内核中 bind 实际上底层是依靠这个 hash 表实现的，这个 hash 表的示意结构如下：
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/6.png" width="750"/>
+    <img src="Socket_bind_函数详解/6.png" width="750"/>
 </div>
 
 哈希存储 IP 地址/端口相关数据结构信息。哈希表时间复杂度是 O(1)，非常快。但是这里也有缺点，因为哈希表是由数组和链表的组合结构，自身有冲突链表（哈希链），而且 `inet_bind_bucket` 有 owners 链表，保存共享端口（端口相同）的 socket 数据。
@@ -575,7 +575,7 @@ glibc 的 bind 最终会调用到内核的 __inet_bind 函数。内核维持了�
 查询数据时，可能需要遍历两个链表，而且在同一个网域下，以端口作为哈希索引，导致不同的 IP 地址相同端口的数据也会在同一个 `inet_bind_bucket` 里。所以 `inet_bind_bucket` 要使用 `fastreuse` 和 `fastreuseport` 去优化，尽量避免链表遍历。更为具体的 hash 结构如下所示：
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/7.png" width="850"/>
+    <img src="Socket_bind_函数详解/7.png" width="850"/>
 </div>
 
 在上图中，inet_hashinfo 结构体中的 bhash 指针指向的就是 inet_bind_hashbucket 数组。而 inet_bind_hashbucket 结构体中，chain 为 struct hlist_head 类型，其中的 first 指向 inet_bind_bucket 结构体中的 node 结点，这些 node 结点将 inet_bind_bucket 串联成一个链表。并且在每一个 inet_bind_bucket 结构体中，有一个 owners 指向 sock 结构体链表。在这个链表中，每一个 sock 的端口号相同。
@@ -851,7 +851,7 @@ call_err=bind(sockfd_server,(struct sockaddr*)(&sock_addr),sizeof(sock_addr));
 让我们看下 inet_bind 的流程：
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/8.png" width="500"/>
+    <img src="Socket_bind_函数详解/8.png" width="500"/>
 </div>
 
 值得注意的是，由于对于 <1024 的端口号需要 CAP_NET_BIND_SERVICE, 我们在监听 80 端口号 (例如启动 nginx 时候), 需要使用 root 用户或者赋予这个可执行文件 CAP_NET_BIND_SERVICE 权限。
@@ -1169,25 +1169,25 @@ static int inet_csk_bind_conflict(const struct sock *sk,
 如果 sk2 (即已 bind 的 socket) 是 TCP_LISTEN 状态或者，sk2 和新 sk 两者之一没有设置_REUSEADDR 的时候，可以判断为冲突。我们可以得出，如果原 sock 和新 sock 都设置了 SO_REUSEADDR 的时候，并且原 sock 不是 Listen 状态，都可以绑定成功，甚至 ESTABLISHED 状态也可以！
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/9.png" width="500"/>
+    <img src="Socket_bind_函数详解/9.png" width="500"/>
 </div>
 
 这个在我们平常工作中，最常见的就是原 sock 处于 TIME_WAIT 状态，这通常在我们关闭 Server 的时候出现，如果不设置 SO_REUSEADDR, 则会绑定失败，进而启动不来服务。而设置了 SO_REUSEADDR, 由于不是 TCP_LISTEN, 所以可以成功。
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/10.png" width="500"/>
+    <img src="Socket_bind_函数详解/10.png" width="500"/>
 </div>
 
 SO_REUSEPORT 是 Linux 在 3.9 版本引入的新功能。在海量高并发连接的创建时候，由于正常的模型是单线程 listener 分发，无法利用多核优势，这就会成为瓶颈。我们看下一般的 Reactor 线程模型:
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/11.png" width="500"/>
+    <img src="Socket_bind_函数详解/11.png" width="500"/>
 </div>
 
 明显的其单线程 listen/accept 会存在瓶颈 (如果采用多线程 epoll accept，则会惊群，加 WQ_FLAG_EXCLUSIVE 可以解决一部分)，尤其是在采用短链接的情况下。鉴于此，Linux 增加了 SO_REUSEPORT, 让我们在多次 bind 监听相同 ip:port 地址的时候，如果设置了 SO_REUSEPORT 的时候不会报错，也就是让我们有个多线程 (进程) bind/listen 的能力。
 
 <div align="center">
-    <img src="10_Socket_bind_函数详解/12.png" width="600"/>
+    <img src="Socket_bind_函数详解/12.png" width="600"/>
 </div>
 
 直接在内核层面做负载均衡，将 accept 的任务分散到不同的线程的不同 socket 上 (Sharding)，毫无疑问可以多核能力，大幅提升连接成功后的 socket 分发能力。

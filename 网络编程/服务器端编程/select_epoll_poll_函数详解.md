@@ -93,7 +93,7 @@ select 函数修改由指针 readset、writeset 和 exceptset 所指向的的描
 接收低水位标记和发送低水位标记的目的在于：允许应用进程控制在 select 返回可读或可写条件之前有多少数据可读或有多大空间可用于写。举例来说，如果我们知道除非至少存在 64 个字节的数据，否则我们的应用进程没有任何有效工作可做，那么可以把接收低水位标记设置为 64，以防少于 64 个字节的数据准备好读时 select 唤醒我们。select 的就绪条件总结如下：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/1.png" width="500"/>
+    <img src="Select_Epoll_Poll_函数详解_static/1.png" width="500"/>
 </div>
 
 ### 3.str_cli 函数
@@ -101,7 +101,7 @@ select 函数修改由指针 readset、writeset 和 exceptset 所指向的的描
 现在我们可以使用 select 函数重写之前的 str_c1i 函数了，这样服务器进程一终止，客户就能马上得到通知。早先那个版本的问题在于：当套接字上发生某些事件时，客户可能阻塞于 fgets 调用。新版本改为阻塞于 select 调用，或是等待标准输入可读，或是等待套接字可读。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/2.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/2.png" width="350"/>
 </div>
 
 客户的套接字上的三个条件处理如下：
@@ -336,7 +336,7 @@ void str_cli(FILE *fp, int sockfd) {
 select 的调用过程如下所示：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/3.png" width="520"/>
+    <img src="Select_Epoll_Poll_函数详解_static/3.png" width="520"/>
 </div>
 
 - 使用 copy_from_user __从用户空间拷贝 fd_set 到内核空间__
@@ -758,7 +758,7 @@ int main(void)
 编译并运行，结果如下：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/7.png" width="550"/>
+    <img src="Select_Epoll_Poll_函数详解_static/7.png" width="550"/>
 </div>
 
 1. 当用户输入一组字符，这组字符被送入 buffer，字符停留在 buffer 中，又因为 buffer 由空变为不空，所以 ET 返回读就绪，输出 "welcome to epoll's world!"。
@@ -774,7 +774,7 @@ ev.events=EPOLLIN;    // 默认使用 LT 模式
 编译并运行，结果如下：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/8.png" width="550"/>
+    <img src="Select_Epoll_Poll_函数详解_static/8.png" width="550"/>
 </div>
 
 程序陷入死循环，因为用户输入任意数据后，数据被送入 buffer 且没有被读出，所以 LT 模式下每次 epoll_wait 都认为 buffer 可读返回读就绪。导致每次都会输出 "welcome to epoll's world!"。
@@ -817,7 +817,7 @@ int main(void)
 编译并运行，结果如下：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/9.png" width="550"/>
+    <img src="Select_Epoll_Poll_函数详解_static/9.png" width="550"/>
 </div>
 
 本程序依然使用 LT 模式，但是每次 epoll_wait 返回读就绪的时候我们都将 buffer（缓冲）中的内容 read 出来，所以导致 buffer 再次清空，下次调用 epoll_wait 就会阻塞。所以能够实现我们所想要的功能——当用户从控制台有任何输入操作时，输出 "welcome to epoll's world!"。
@@ -858,7 +858,7 @@ int main(void)
 编译并运行，结果如下：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/10.png" width="550"/>
+    <img src="Select_Epoll_Poll_函数详解_static/10.png" width="550"/>
 </div>
 
 这个程序的功能是只要标准输出写就绪，就输出 "welcome to epoll's world"。我们发现这将是一个死循环。下面具体分析一下这个程序的执行过程：
@@ -902,7 +902,7 @@ int main(void)
 编译并运行，结果如下：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/11.png" width="500"/>
+    <img src="Select_Epoll_Poll_函数详解_static/11.png" width="500"/>
 </div>
 
 与程序三相比，程序四只是将输出语句的 printf 的换行符移除。我们看到程序成挂起状态。因为第一次 epoll_wait 返回写就绪后，程序向标准输出的 buffer 中写入 "welcome to epoll's world!"，但是因为没有输出换行，所以 buffer 中的内容一直存在，下次 epoll_wait 的时候，虽然有写空间但是 ET 模式下不再返回写就绪。即**只有当写空间增加的时候**，ET 模式下，epoll_wait 才会返回。
@@ -943,7 +943,7 @@ int main(void)
 编译并运行，结果如下：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/12.png" width="500"/>
+    <img src="Select_Epoll_Poll_函数详解_static/12.png" width="500"/>
 </div>
 
 程序五相对程序四仅仅是修改 ET 模式为默认的 LT 模式，我们发现程序再次死循环。这时候原因已经很清楚了，因为当向 buffer 写入 "welcome to epoll's world!" 后，虽然 buffer 没有输出清空，但是 LT 模式下只有 buffer 有写空间就返回写就绪，所以会一直输出 "welcome to epoll's world!"，当 buffer 满的时候，buffer 会自动刷清输出，同样会造成 epoll_wait 返回写就绪。
@@ -1284,7 +1284,7 @@ epoll_data_t 中的 ptr 怎么用呢？是给用户自由使用的。epoll 不�
 在网络编程中一般需要使用线程池来对网络请求进行处理，使用 c 语言实现的一个简单线程池如下所示。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/4.png" width="700"/>
+    <img src="Select_Epoll_Poll_函数详解_static/4.png" width="700"/>
 </div>
 
 在线程池中有以下三个基本组件：
@@ -1871,13 +1871,13 @@ epoll 的工作流程如下所示：
 下面是 select/poll/epoll 的 benchmark 测试图：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/5.png" width="500"/>
+    <img src="Select_Epoll_Poll_函数详解_static/5.png" width="500"/>
 </div>
 
 select/poll/epoll 的三种 I/O 复用模式的比较：
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/6.png" width="800"/>
+    <img src="Select_Epoll_Poll_函数详解_static/6.png" width="800"/>
 </div>
 
 ### 6.epoll 与 select 图解
@@ -1887,7 +1887,7 @@ select/poll/epoll 的三种 I/O 复用模式的比较：
 下图是一个典型的计算机结构图，计算机由 CPU、存储器（内存）、网络接口等部件组成。了解epoll 本质的第一步，要从硬件的角度看计算机怎样接收网络数据。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/13.jpg" width="600"/>
+    <img src="Select_Epoll_Poll_函数详解_static/13.jpg" width="600"/>
 </div>
 
 下图展示了网卡接收数据的过程。在 1 阶段，网卡收到网线传来的数据；经过 2 阶段的硬件电路的传输；最终将数据写入到内存中的某个地址上（3 阶段）。这个过程涉及到 DMA 传输、IO通路选择等硬件有关的知识，但我们只需知道：网卡会把接收到的数据写入内存。__注意此内存并不是套接字的接收缓冲区，最后还需要 CPU 才能把数据从此内存区域传输到套接字的接收缓冲区中，以及从内核中的接收缓冲区传输到用户缓冲区中__。
@@ -1899,7 +1899,7 @@ select/poll/epoll 的三种 I/O 复用模式的比较：
 一般而言，由硬件产生的信号需要 CPU 立马做出回应（不然数据可能就丢失），所以它的优先级很高。CPU 理应中断掉正在执行的程序，去做出响应；当 cpu 完成对硬件的响应后，再重新执行用户程序。中断的过程如下图，和函数调用差不多。只不过函数调用是事先定好位置，而中断的位置由"信号"决定。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/14.png" width="200"/>
+    <img src="Select_Epoll_Poll_函数详解_static/14.png" width="200"/>
 </div>
 
 以键盘为例，当用户按下键盘某个按键时，键盘会给 CPU 的中断引脚发出一个高电平。CPU 能够捕获这个信号，然后执行键盘中断程序。现在可以回答本节提出的问题了：当网卡把数据写入到内存后，网卡向 CPU 发出一个中断信号，操作系统便能得知有新数据到来，再通过网卡中断程序去处理数据。
@@ -1934,7 +1934,7 @@ printf(...)
 下图中的计算机中运行着 A、B、C 三个进程，其中进程 A 执行着上述基础网络程序，一开始，这 3 个进程都被操作系统的工作队列所引用，处于运行状态，会分时执行。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/15.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/15.png" width="350"/>
 </div>
 
 **2) 等待队列**
@@ -1942,13 +1942,13 @@ printf(...)
 当进程 A 执行到创建 socket 的语句时，操作系统会创建一个由文件系统管理的 socket 对象（如下图）。这个 socket 对象包含了发送缓冲区、接收缓冲区、等待队列等成员。__等待队列是个非常重要的结构，它指向所有需要等待该 socket 事件的进程__。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/16.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/16.png" width="350"/>
 </div>
 
 当程序执行到 read 时，操作系统会将进程 A 从工作队列移动到该 socket 的等待队列中（如下图）。由于工作队列只剩下了进程 B 和 C，依据进程调度，CPU 会轮流执行这两个进程的程序，不会执行进程 A 的程序。所以进程 A 被阻塞，不会往下执行代码，也不会占用 CPU 资源。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/17.jpg" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/17.jpg" width="350"/>
 </div>
 
 操作系统添加某个进程到等待队列只是添加了对这个"等待中"进程的引用，以便在接收到数据时获取进程对象、将其唤醒，而非直接将进程管理纳入自己之下。上图为了方便说明，直接将进程挂到等待队列之下。__当 socket 接收到数据后，操作系统将该 socket 等待队列上的进程重新放回到工作队列，该进程变成运行状态，继续执行代码__。也由于 socket 的接收缓冲区已经有了数据，read 可以返回接收到的数据。
@@ -1983,19 +1983,19 @@ while(1){
 select 的实现思路很直接。假如程序同时监视如下图的 sock1、sock2 和 sock3 三个 socket，那么在调用 select 之后，操作系统把进程 A 分别加入这三个 socket 的等待队列中。这就是前面介绍 select 函数所说的"__调用 select 函数时，要把 current 往所有的设备等待队列中挂__"。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/18.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/18.png" width="350"/>
 </div>
 
 当任何一个 socket 收到数据后，中断程序将唤起进程。下图展示了 sock2 接收到了数据的处理流程。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/19.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/19.png" width="350"/>
 </div>
 
 所谓唤起进程，就是将进程从所有的等待队列中移除，加入到工作队列里面。如下图所示。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/20.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/20.png" width="350"/>
 </div>
 
 经由这些步骤，当进程 A 被唤醒后，它知道至少有一个 socket 接收了数据。程序只需遍历一遍 socket 列表，就可以得到就绪的 socket。
@@ -2018,7 +2018,7 @@ select 低效的原因之一是将"维护等待队列"和"阻塞进程"两个步
 epoll 将这两个操作分开，先用 epoll_ctl 维护等待队列，再调用 epoll_wait 阻塞进程。显而易见的，效率就能得到提升。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/21.png" width="280"/>
+    <img src="Select_Epoll_Poll_函数详解_static/21.png" width="280"/>
 </div>
 
 **2) 措施二：就绪列表**
@@ -2026,7 +2026,7 @@ epoll 将这两个操作分开，先用 epoll_ctl 维护等待队列，再调用
 select 低效的另一个原因在于 select 方法执行时不知道哪些 socket 收到数据，只能每次一个个遍历，根据 poll 函数的返回值来判断此 socket 是否就绪。如果内核维护一个“就绪列表”，引用就绪的 socket，就能避免遍历。如下图所示，计算机共有三个 socket，收到数据的sock2 和 sock3 被 rdlist（就绪列表）所引用。当进程被唤醒后，只要获取 rdlist 的内容，就能够知道哪些 socket 收到数据。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/22.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/22.png" width="350"/>
 </div>
 
 #### 6.6 epoll 的原理与流程
@@ -2036,7 +2036,7 @@ select 低效的另一个原因在于 select 方法执行时不知道哪些 sock
 如下图所示，当某个进程调用 epoll_create 方法时，内核会创建一个 eventpoll 对象（也就是程序中 epfd 所代表的对象），eventpoll 也是一个文件描述符对象，因此可以说 epoll使用一个文件描述符管理多个描述符。__eventpoll 对象也是文件系统中的一员，和 socket 一样，它也会有等待队列__。同时，eventpoll 中还会维护一个"就绪列表"作为成员。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/23.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/23.png" width="350"/>
 </div>
 
 **2) 维护监视队列**
@@ -2044,7 +2044,7 @@ select 低效的另一个原因在于 select 方法执行时不知道哪些 sock
 创建 epoll 对象后，可以用 epoll_ctl 添加或删除所要监听的 socket。以添加 socket 为例，如下图，如果通过 epoll_ctl 添加 sock1、sock2 和 sock3 的监视，内核会将这三个 socket 添加到 eventpoll 的等待队列中。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/24.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/24.png" width="350"/>
 </div>
 
 当 socket 收到数据后，中断程序会操作 eventpoll 对象，而不是直接操作进程。
@@ -2054,7 +2054,7 @@ select 低效的另一个原因在于 select 方法执行时不知道哪些 sock
 当 socket 收到数据后，中断程序会给 eventpoll 的"就绪列表"添加 socket 引用。如下图展示的是 sock2 和 sock3 收到数据后，中断程序让 rdlist 引用这两个 socket。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/25.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/25.png" width="350"/>
 </div>
 
 eventpoll 对象相当于是 socket 和进程之间的中介，socket 的数据接收并不直接影响进程，而是通过改变 eventpoll 的就绪列表来改变进程状态。__当程序执行到 epoll_wait 时，如果 rdlist 已经引用了 socket，那么 epoll_wait 直接返回，如果 rdlist 为空，阻塞进程__。
@@ -2064,7 +2064,7 @@ eventpoll 对象相当于是 socket 和进程之间的中介，socket 的数据�
 假设计算机中正在运行进程 A 和进程 B，在某时刻进程 A 运行到了 epoll_wait 语句。如下图所示，内核会将进程 A 放入 eventpoll 的等待队列中，阻塞进程。
 
 <div align="center">
-    <img src="1_Select_Epoll_Poll_函数详解_static/26.png" width="350"/>
+    <img src="Select_Epoll_Poll_函数详解_static/26.png" width="350"/>
 </div>
 
 当 socket 接收到数据，中断程序一方面修改 rdlist，另一方面唤醒 eventpoll 等待队列中的进程，进程 A 再次进入运行状态（如下图）。也因为 rdlist 的存在，进程 A 通过返回的rdlist，可以知道哪些 socket 发生了变化。

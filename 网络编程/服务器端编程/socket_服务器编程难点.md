@@ -11,7 +11,7 @@
 其结构如下图所示：
 
 <div align="center">
-    <img src="6_Socket_服务器编程难点/1.png" width="500"/>
+    <img src="Socket_服务器编程难点/1.png" width="500"/>
 </div>
 
 实现任何客户/服务器网络应用所需的所有基本步骤都可以通过 Echo Server 阐明，如果想要把这个例子扩充成其他的应用程度，只需要修改服务器对来自客户的输入处理过程。
@@ -209,7 +209,7 @@ good bye
 模拟这种情形的一个简单方法就是：启动服务器，让它调用 socket、bind 和 listen，然后在调用 accept 之前睡眠一小段时间。在服务器进程睡眠时，启动客户，让它调用 socket 和 connect。**一旦 connect 返回，就设置 SO＿LINGER 套接字选项以产生这个 RST，然后终止**。
 
 <div align="center">
-    <img src="6_Socket_服务器编程难点/2.png" width="500"/>
+    <img src="Socket_服务器编程难点/2.png" width="500"/>
 </div>
 
 但是，如何处理这种中止的连接依赖于不同的实现。**源自 Berkeley 的实现完全在内核中处理中止的连接，服务器进程根本看不到**。然而大多数 SVR4 实现返回一个错误给服务器进程，作为 accept 的返回结果，不过错误本身取决于实现。POSIX 指出返回的 **errno 值必须是 ECONNABORTED（"software caused connection abort"，软件引起的连接中止）**。服务器可以直接忽略 **`ECONNABORTED`** 错误，再次调用 accept 就行。
@@ -518,7 +518,7 @@ process1 | process2 | process3
 我们经常用到管道，比如要列出当前目录下的文件(ls)，只保留 ls 输出中包含字符串 "key" 的行(grep)，并在滚动页面中查看结果 (less)：
 
 <div align="center">
-    <img src="6_Socket_服务器编程难点/3.png" width="300"/>
+    <img src="Socket_服务器编程难点/3.png" width="300"/>
 </div>
 
 ```shell
@@ -601,7 +601,7 @@ int main() {
 当父进程 fork 出子进程时，父子进程与管道读写端的描述符如下所示：
 
 <div align="center">
-    <img src="6_Socket_服务器编程难点/4.png" width="500"/>
+    <img src="Socket_服务器编程难点/4.png" width="500"/>
 </div>
 
 当使用 close 关闭管道的读端时，只有当管道的读端引用计数为 0 时，才会真正关闭读端的描述符，因此需要同时关闭父子进程的读端描述符。这时，父进程继续往管道中写时，会产生 SIGPIPE 信号，如下所示：
@@ -1098,3 +1098,132 @@ tcp        0      0 192.168.17.128:57908    192.168.17.128:9523     ESTABLISHED
 ```
 
 在监听队列中，处于 **`ESTABLISHED`** 状态的连接只有 6 个（**`backlog + 1`**），其余连接处于 **`SYN_SENT`** 状态。
+
+## 九、发送/接收缓冲区大小选项
+
+当使用 setsockopt 来设置 TCP 的接收缓冲区和发送缓冲区的大小时，**系统都会将其值加倍，并且不得小于某个最小值**。TCP 接收缓冲区的最小值是 256 字节（不同系统会有不同的值，比如我们测试的最小值为 2304 字节），而发送缓冲区的最小值是 2048 字节（不同系统会有不同的值）。系统这样做的目的主要是：确保一个 TCP 连接拥有足够的空闲缓冲区来处理拥塞（比如快速重传算法就期望 TCP 接收缓冲区能至少容纳 4 个大小为 SMSS 的 TCP 报文段）。
+
+客户端发送数据给服务端，并且设置了发送缓冲区的大小（大小由程序参数传入），设置完之后打印一下设置的缓冲区大小：
+
+```c{.line-numbers}
+int main() {
+
+    int cfd;
+    int counter = 10;
+    char buf[BUFFER_SIZE];
+    unsigned int ip = 0;
+    int sendbuf = 2400;
+    int len = sizeof(sendbuf);
+
+    // 服务器地址结构
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "127.0.0.1", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+    setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sendbuf, sizeof(sendbuf));
+    getsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sendbuf, (socklen_t *) &len);
+    printf("the tcp send buffer size after setting is %d\n", sendbuf);
+
+    connect(cfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
+    memset(buf, 'a', BUFFER_SIZE);
+    send(cfd, buf, BUFFER_SIZE, 0);
+
+    close(cfd);
+
+    return 0;
+}
+```
+
+服务端接收客户端的数据，并且设置了接收缓冲区的大小（大小由程序参数传入），设置完之后打印一下设置的缓冲区大小。
+
+```c{.line-numbers}
+int main() {
+
+    int cfd, lfd;
+
+    struct sockaddr_in serv_addr, clit_addr;
+    socklen_t clit_addr_len;
+    char buf[BUFFER_SIZE];
+    int recvbuf = 50;
+    int len = sizeof(recvbuf);
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    lfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        sys_err("socket error");
+    }
+
+    setsockopt(lfd, SOL_SOCKET, SO_RCVBUF, &recvbuf, sizeof(recvbuf));
+    getsockopt(lfd, SOL_SOCKET, SO_RCVBUF, &recvbuf, (socklen_t *) &len);
+    printf("the tcp receive buffer size after setting is %d\n", recvbuf);
+
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    listen(lfd, 256);
+
+    clit_addr_len = sizeof(clit_addr);
+    // 模拟故障，阻塞 10s
+    sleep(10);
+    cfd = accept(lfd, (struct sockaddr *) &clit_addr, &clit_addr_len);
+
+    if (cfd < 0) {
+        if (errno == ECONNABORTED) {
+            printf("accept: connect reset by peer\n");
+        }
+        return 1;
+    }
+
+    memset(buf, '\0', BUFFER_SIZE);
+    while (recv(cfd, buf, BUFFER_SIZE, 0) > 0) {
+    }
+
+    close(lfd);
+    return 0;
+}
+```
+
+运行服务端程序，将其接收缓冲区大小设置为 50 字节（但是输出的大小却是 2304 字节，说明此系统的 TCP 接收端缓冲区最小值为 2304）：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
+the tcp receive buffer size after setting is 2304
+
+Process finished with exit code 0
+```
+
+运行客户端程序，将其发送缓冲区大小设置为 2400 字节（但是输出的大小却是 4800，这与缓冲区会被系统设置加倍的概念相符合）：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/my_client
+the tcp send buffer size after setting is 4800
+
+Process finished with exit code 0
+```
+
+首先注意第 2 个 TCP 报文段，它指出服务器的接收通告窗口大小为 1152 字节。该值小于 2304 字节，显然是在情理之中。同时，该同步报文段还指出服务器采用的窗口扩大因子是 7。因此客户端可以一次发送 512 字节的数据。
+
+```shell
+xuweilin@xuweilin-virtual-machine:~/桌面$ sudo tcpdump -i 3 -nt
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on lo, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+<------------------------- SYN 三次握手 ----------------------------------->
+IP 127.0.0.1.54702 > 127.0.0.1.9523: Flags [S], seq 3369076222, win 65495, options [mss 65495,sackOK,TS val 3326519652 ecr 0,nop,wscale 7], length 0
+IP 127.0.0.1.9523 > 127.0.0.1.54702: Flags [S.], seq 4207978142, ack 3369076223, win 1152, options [mss 65495,sackOK,TS val 3326519652 ecr 3326519652,nop,wscale 0], length 0
+IP 127.0.0.1.54702 > 127.0.0.1.9523: Flags [.], ack 1, win 512, options [nop,nop,TS val 3326519652 ecr 3326519652], length 0
+
+<------------------------- 发送普通数据 ----------------------  ------------>
+IP 127.0.0.1.54702 > 127.0.0.1.9523: Flags [P.], seq 1:513, ack 1, win 512, options [nop,nop,TS val 3326519652 ecr 3326519652], length 512
+IP 127.0.0.1.9523 > 127.0.0.1.54702: Flags [.], ack 513, win 640, options [nop,nop,TS val 3326519652 ecr 3326519652], length 0
+
+<--------------------------  FIN 四次挥手 ------------------ --------------->
+IP 127.0.0.1.54702 > 127.0.0.1.9523: Flags [F.], seq 513, ack 1, win 512, options [nop,nop,TS val 3326519652 ecr 3326519652], length 0
+IP 127.0.0.1.9523 > 127.0.0.1.54702: Flags [.], ack 514, win 639, options [nop,nop,TS val 3326519696 ecr 3326519652], length 0
+IP 127.0.0.1.9523 > 127.0.0.1.54702: Flags [F.], seq 1, ack 514, win 639, options [nop,nop,TS val 3326528013 ecr 3326519652], length 0
+IP 127.0.0.1.54702 > 127.0.0.1.9523: Flags [.], ack 2, win 512, options [nop,nop,TS val 3326528013 ecr 3326528013], length 0
+```
+

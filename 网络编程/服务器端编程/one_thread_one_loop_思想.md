@@ -244,7 +244,7 @@ bool EventLoop::handleRead()
 EventLoop::handleRead() 函数可以在触发唤醒 fd 的读事件后调用。以上的整个流程如下所示：
 
 <div align="center">
-    <img src="8_one_thread_one_loop_思想/1.png" width="420"/>
+    <img src="one_thread_one_loop_思想/1.png" width="420"/>
 </div>
 
 #### 7.handle_other_things() 方法的逻辑

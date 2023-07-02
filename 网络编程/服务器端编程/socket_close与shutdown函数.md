@@ -36,7 +36,7 @@ int shutdown(int sockfd, int howto);
 - SHUT_RDWR：连接的读半部和写半部都关闭一这与调用 shutdown 两次等效，第一次调用指定 SHUT_RD，第二次调用指定 SHUT_WR。
 
 <div align="center">
-    <img src="5_Socket_close与shutdown函数/1.png" width="400"/>
+    <img src="Socket_close与shutdown函数/1.png" width="400"/>
 </div>
 
 ### 3.SO_LINGER 套接字选项
@@ -50,13 +50,13 @@ SO＿LINGER 套接字选项使得我们可以改变 close 默认设置。
 我们使用 sock 程序可以观察这种异常关闭的过程。我们加上 -L（即开启 SO_LINGER） 选项并将停留时间设为 0。这将导致连接关闭时进行复位而不是正常的 FIN。我们连接到处于服务器上的 sock 程序，并键入一输入行:
 
 <div align="center">
-    <img src="5_Socket_close与shutdown函数/2.png" width="450"/>
+    <img src="Socket_close与shutdown函数/2.png" width="450"/>
 </div>
 
 下面是这个例子的 tcpdump 输出显示（在这个图中我们已经删除了所有窗口大小的说明，因为它们与讨论无关）。第 1~3 行显示出建立连接的正常过程，第 4 行发送我们键入的数据行（12 个字符和 Unix 换行符），第 5 行是对收到的数据的确认。第 6 行对应为终止客户程序而键入的文件结束符 (Control D)。由于我们指明使用异常关闭而不是正常关闭（命令行中 的-L0 选项），因此主机 bsdi 端的 TCP 发送一个 RST 而不是通常的 FN。RST 报文段中包含一个序号和确认序号。**需要注意的是 RST 报文段不会导致另一端产生任何响应，即另外一端根本不发送确认**。收到 RST 的一方将终止该连接，并通知应用层连接复位。我们会在服务器上面收到如下的差错信息：
 
 <div align="center">
-    <img src="5_Socket_close与shutdown函数/3.png" width="450"/>
+    <img src="Socket_close与shutdown函数/3.png" width="450"/>
 </div>
 
 这个服务器程序从网络中接收数据并将它接收的数据显示到其标准输出上。通常，从它的 TCP 上收到文件结束符后便将结束，**但这里我们看到当收到 RST 时，它产生了一个差错。这个差错正是我们所期待的:连接被对方复位了**。
@@ -92,7 +92,7 @@ struct linger {
 ##### 3.2.1 close 默认行为
 
 <div align="center">
-    <img src="5_Socket_close与shutdown函数/4.png" width="450"/>
+    <img src="Socket_close与shutdown函数/4.png" width="450"/>
 </div>
 
 我们假设在客户数据到达时，服务器暂时处于忙状态。那么这些数据由 TCP 加入到服务器的套接字接收缓冲区中。类似地，下一个分节即客户的 FIN 也加入该套接字接收缓冲区中。默认情况下客户的 close 立即返回。如上图所示，客户的 close 可能在服务器读套接字接收缓区中的剩余数据之前就返回。对于服务器主机来说，在服务器应用进程读这些剩余数据之前就崩溃是完全可能的，而且客户应用进程永远不会知道（因为此时客户进程调用 close 关闭了连接，不会再接收到 socket 上的信息）。
@@ -102,7 +102,7 @@ struct linger {
 客户可以设置 **`SO_LINGER`** 套接字选项， 指定一个正的延滞时间。这种情况下客户的 close 要到它的数据和 FIN 已被服务器主机的 TCP 确认后才返回，如下图所示：
 
 <div align="center">
-    <img src="5_Socket_close与shutdown函数/5.png" width="450"/>
+    <img src="Socket_close与shutdown函数/5.png" width="450"/>
 </div>
 
 然而我们仍然有与 __3.2.1__ 一样的问题：在服务器应用进程读剩余数据之前，服务器主机可能崩溃， 并且客户应用进程永远不会知道。使用 **`l_linger`** 选项只能确保服务器收到了客户端发送的数据（只有接受了 ACK 函数 close 才会返回），但是不能确保服务器应用进程一定会从接收缓冲区中读取数据。当然，不使用 **`l_linger`** 选项的话，连服务器是否接收到发送的数据都无法知道。
@@ -110,7 +110,7 @@ struct linger {
 更糟糕的是，下图展示了当给 **`SO_LINGER`** 选项设置偏低的延滞时间值时可能发生的现象。
 
 <div align="center">
-    <img src="5_Socket_close与shutdown函数/6.png" width="550"/>
+    <img src="Socket_close与shutdown函数/6.png" width="550"/>
 </div>
 
 当设置了 l_linger 不为 0，但是发生了超时现象时，会产生 RST 重置位报文，close 返回 -1，errno 被置为 **`EWOULDBLOCK`**。
@@ -122,7 +122,7 @@ struct linger {
 为了真正让客户知道 __服务器应用进程__ 读取了自己发送的数据，我们可以改为使用 shutdown 方法（第二个参数设置为 SHUT_WR）而不是调用 close（这是因为调用 shutdown 方法之后还可以读取对端发送过来的数据）。然后等待对端 close 连接。如下图所示：
 
 <div align="center">
-    <img src="5_Socket_close与shutdown函数/7.png" width="550"/>
+    <img src="Socket_close与shutdown函数/7.png" width="550"/>
 </div>
 
 ##### 3.2.4 总结

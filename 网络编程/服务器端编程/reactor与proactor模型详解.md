@@ -35,7 +35,7 @@ I/O 框架库提供的事件处理器通常是由一个或多个模板函数组�
 是事件处理器接口的具体实现。它实现了应用程序提供的某个服务。**每个具体的事件处理器 Event Handler 总和一个描述符 handle 相关**。应用程序会将 Concrete Event Handler 注册到 Initiation Dispatcher上，当特定的事件发生时，Initiation Dispatcher 就会调用 Concrete Event Handler 中的回调方法来进行处理。
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/1.png" width="450"/>
+    <img src="Reactor与Proactor模型详解_static/1.png" width="450"/>
 </div>
 
 ### 2.Reactor 模式流程
@@ -48,7 +48,7 @@ I/O 框架库提供的事件处理器通常是由一个或多个模板函数组�
 4. 当 handle 上的某个事件变为 ready 状态时，Initiation Dispatcher 会调用 Event Handler 中的回调方法来对事件进行处理。
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/2.png" width="500"/>
+    <img src="Reactor与Proactor模型详解_static/2.png" width="500"/>
 </div>
 
 总结 Reactor 模式工作的流程为：首先将 Event Handler 注册到 Initiation Dispatcher 上，同时指明 Event Handler 想要监听的事件类型 (比如 read、connect)。然后 Initiation Dispatcher会调用 select 方法阻塞直到 handle 上感兴趣的时间就绪，如果时间就绪，则调用对应的 Event Handler。
@@ -60,7 +60,7 @@ I/O 框架库提供的事件处理器通常是由一个或多个模板函数组�
 #### 3.1 客户端连接到Logging Server
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/3.png" width="400"/>
+    <img src="Reactor与Proactor模型详解_static/3.png" width="400"/>
 </div>
 
 1. logging server 将 logging acceptor 注册到 initiation dispatcher 上，从而处理客户端的连接请求
@@ -76,7 +76,7 @@ I/O 框架库提供的事件处理器通常是由一个或多个模板函数组�
 #### 3.2 客户端发送日志记录到 logging server
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/4.png" width="400"/>
+    <img src="Reactor与Proactor模型详解_static/4.png" width="400"/>
 </div>
 
 1. 客户端 A 发送了一条日志记录
@@ -91,7 +91,7 @@ I/O 框架库提供的事件处理器通常是由一个或多个模板函数组�
 ### 1.Reactor 单线程模型
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/5.png" width="550"/>
+    <img src="Reactor与Proactor模型详解_static/5.png" width="550"/>
 </div>
 
 可以看到进程里有 Reactor、Acceptor、Handler 这三个对象：
@@ -117,7 +117,7 @@ I/O 框架库提供的事件处理器通常是由一个或多个模板函数组�
 ### 2.Reactor 多线程模型
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/6.png" width="550"/>
+    <img src="Reactor与Proactor模型详解_static/6.png" width="550"/>
 </div>
 
 详细说一下这个方案：
@@ -136,7 +136,7 @@ I/O 框架库提供的事件处理器通常是由一个或多个模板函数组�
 ### 3.Reactor 主从多线程（主 Reactor 唯一）
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/7.png" width="550"/>
+    <img src="Reactor与Proactor模型详解_static/7.png" width="550"/>
 </div>
 
 方案详细说明如下：
@@ -163,7 +163,7 @@ Reactor 主从多线程的方案虽然看起来复杂的，但是实际实现时
 - **Acceptor 线程池仅仅只用于客户端的登陆、握手和安全认证，一旦链路建立成功，就将链路注册到后端 subReactor 线程池的 IO 线程上，由 IO 线程负责后续的 IO 操作**。
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/8.png" width="550"/>
+    <img src="Reactor与Proactor模型详解_static/8.png" width="550"/>
 </div>
 
 利用主从 NIO 线程模型，可以解决 1 个服务端监听线程无法有效处理所有客户端连接的性能不足问题。它的工作流程总结如下：
@@ -178,7 +178,7 @@ Reactor 主从多线程的方案虽然看起来复杂的，但是实际实现时
 Netty 线程模型采用"服务端监听线程"和"I/O 线程"分离的方式，与 Reactor 主从多线程模型类似。抽象出 NioEventLoop 来表示一个不断循环执行处理任务的线程，每个 NioEventLoop 有一个 selector，用于监听绑定在其上的 socket 链路。
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/9.png" width="550"/>
+    <img src="Reactor与Proactor模型详解_static/9.png" width="550"/>
 </div>
 
 Netty 采用串行化设计理念，从消息的读取->解码->处理->编码->发送，始终由 I/O 线程NioEventLoop 负责。整个流程不会进行线程上下文切换，数据无并发修改风险。一个NioEventLoop 聚合一个多路复用器 selector，因此可以处理多个客户端连接。Netty 只负责提供和管理"I/O线程"，其他的业务线程模型由用户自己集成。
@@ -194,13 +194,13 @@ Netty 采用串行化设计理念，从消息的读取->解码->处理->编码->
 注意，**阻塞 I/O 等待的是「内核数据准备好」和「数据从内核态拷贝到用户态」这两个过程**。过程如下图：
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/10.png" width="500"/>
+    <img src="Reactor与Proactor模型详解_static/10.png" width="500"/>
 </div>
 
 知道了阻塞 I/O ，来看看非阻塞 I/O，非阻塞的 read 请求在数据未准备好（socket 接收缓冲区中没有）的情况下立即返回，可以继续往下执行，此时应用程序不断轮询内核，直到数据准备好，内核将数据拷贝到应用程序缓冲区（**拷贝到应用程序缓冲区的过程是同步的，因为需要等待拷贝完成**），read 调用才可以获取到结果。过程如下图：
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/11.png" width="500"/>
+    <img src="Reactor与Proactor模型详解_static/11.png" width="500"/>
 </div>
 
 注意，这里最后一次 read 调用（即从内核拷贝到应用进程），获取数据的过程，是一个同步的过程，是需要等待的过程。这里的同步指的是内核态的数据拷贝到用户程序的缓存区这个过程。
@@ -214,7 +214,7 @@ Netty 采用串行化设计理念，从消息的读取->解码->处理->编码->
 当我们发起 aio_read （异步 I/O） 之后，就立即返回，内核自动将数据从内核空间拷贝到用户空间，这个拷贝过程同样是异步的，内核自动完成的，和前面的同步操作不一样，应用程序并不需要主动发起拷贝动作。过程如下图：
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/12.png" width="500"/>
+    <img src="Reactor与Proactor模型详解_static/12.png" width="500"/>
 </div>
 
 举个你去饭堂吃饭的例子，你好比应用程序，饭堂好比操作系统。
@@ -239,7 +239,7 @@ Proactor 正是采用了异步 I/O 技术，所以被称为异步网络模型。
 接下来，一起看看 Proactor 模式的示意图：
 
 <div align="center">
-    <img src="3_Reactor与Proactor模型详解_static/13.png" width="550"/>
+    <img src="Reactor与Proactor模型详解_static/13.png" width="550"/>
 </div>
 
 介绍一下 Proactor 模式的工作流程：

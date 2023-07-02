@@ -54,7 +54,7 @@ I/O 复用并非只限于网络编程，许多重要的应用程序也需要使�
 ### 1. 阻塞式 I/O
 
 <div align="center">
-    <img src="2_Linux_IO_模型详解_static/1.png" width="530"/>
+    <img src="linux_IO_模型详解_static/1.png" width="530"/>
 </div>
 
 当用户进程调用了 recvfrom 这个系统调用（recvfrom 实际上是 UDP 的接收读取数据的函数，并且在这里被视为系统调用），kernel 就开始了 I/O 的第一个阶段：**准备数据（对于网络 I/O 来说，很多时候数据在一开始还没有到达。比如，还没有收到一个完整的 UDP 包。这个时候 kernel 就要等待足够的数据到来）**。这个过程需要等待，也就是说数据被拷贝到操作系统内核的缓冲区中是需要一个过程的。而在用户进程这边，整个进程会被阻塞。当 kernel 一直等到数据准备好了，它就会将数据从内核拷贝到用户内存，然后 kernel 返回结果，用户进程才解除 block 的状态，重新运行起来。
@@ -62,7 +62,7 @@ I/O 复用并非只限于网络编程，许多重要的应用程序也需要使�
 ### 2. 非阻塞式 I/O
 
 <div align="center">
-    <img src="2_Linux_IO_模型详解_static/2.png" width="530"/>
+    <img src="linux_IO_模型详解_static/2.png" width="530"/>
 </div>
 
 进程把一个套接字设置成非阻塞是在通知内核：**当所请求的 I/O 操作非得把本进程投入睡眠/阻塞才能完成时，不要把本进程投入睡眠，而是返回一个错误**。前三次调用 recvfrom 时没有数据可返回， 因此内核转而立即返回一个 EWOULDBLOCK 错误。第四次调用 recvfrom 时已有一个数据报准备好， 它被复制到应用进程缓冲区， 于是 recvfrom 成功返回，我们接着处理数据。**在数据从内核缓冲区拷贝到应用进程缓冲区时，非阻塞 I/O 也需要等待，或者说同步等待**。
@@ -76,7 +76,7 @@ I/O 复用并非只限于网络编程，许多重要的应用程序也需要使�
 有了 I/O 复用 (I/O multiplexing)，我们就可以调用 select 或 poll，阻塞在这两个系统调用中的某一个之上，而不是阻塞在真正的 I/O 系统调用上。下图概括展示了 I/O 复用模型。
 
 <div align="center">
-    <img src="2_Linux_IO_模型详解_static/3.png" width="530"/>
+    <img src="linux_IO_模型详解_static/3.png" width="530"/>
 </div>
 
 I/O multiplexing 就是我们说的 select，poll，epoll，有些地方也称这种 I/O 方式为 event driven I/O。select/epoll 的好处就在于单个进程/线程就可以同时处理多个网络连接的 I/O。它的基本原理就是 select，poll，epoll 这个 function 会不断的轮询所负责的所有 socket，当某个 socket 有数据到达了，就通知用户进程。
@@ -90,7 +90,7 @@ I/O multiplexing 就是我们说的 select，poll，epoll，有些地方也称�
 ### 4. 信号驱动式的 I/O 模型
 
 <div align="center">
-    <img src="2_Linux_IO_模型详解_static/4.png" width="530"/>
+    <img src="linux_IO_模型详解_static/4.png" width="530"/>
 </div>
 
 我们也可以用信号，让内核在描述符就绪时发送 SIGIO 信号通知我们。我们称这种模型为信号驱动式 I/O（signal-driven I/O），上图是它的概要展示。
@@ -104,7 +104,7 @@ I/O multiplexing 就是我们说的 select，poll，epoll，有些地方也称�
 告知内核启动某个操作，并让内核在整个操作（包括将数据从内核复制到我们自己的缓冲区）完成后通知我们。这种模型与前一节介绍的信号驱动模型的主要区别在于：信号驱动式 I/O 是由内核通知我们何时可以启动一个 I/O 操作，而异步 I/O 模型是由内核通知我们 I/O 操作何时完成。
 
 <div align="center">
-    <img src="2_Linux_IO_模型详解_static/5.png" width="530"/>
+    <img src="linux_IO_模型详解_static/5.png" width="530"/>
 </div>
 
 用户进程发起 read 操作之后，立刻就可以开始去做其它的事，不会阻塞。然后，当 kernel 接收到Asynchronous I/O 会等待数据准备完成，然后将数据拷贝到用户内存，当这一切都完成之后，kernel 会给用户进程发送一个 signal，告诉它 read 操作完成了。
@@ -131,7 +131,7 @@ I/O multiplexing 就是我们说的 select，poll，epoll，有些地方也称�
 五大 I/O 模型的比较图如下所示：
 
 <div align="center">
-    <img src="2_Linux_IO_模型详解_static/6.png" width="550"/>
+    <img src="linux_IO_模型详解_static/6.png" width="550"/>
 </div>
 
 根据上述定义，**我们的前 4 种模型——阻塞式 I/O 模型、非阻塞式 I/O 模型、I/O 复用模型和信号驱动式 I/O 模型都是同步 I/O 模型， 因为其中真正的 I/O 操作 (recvfrom) 将阻塞进程**。只有异步 I/O 模型与 POSIX 定义的异步 I/O 相匹配。
