@@ -1,4 +1,4 @@
-## 高级 I/O 函数
+## 高级 I/O 函数之一
 
 ### 一、pipe 函数
 
@@ -818,14 +818,15 @@ Nagle 算法由 John Nagle 在 1984 年提出，**这个算法可以减少网络
 
 ```c{.line-numbers}
 int optval = 1;
+// 设置 TCP_NODELAY 可以禁用 Nagle 算法
 setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
 ```
 
 **2) Delayed ACK**
 
-TCP 的 Delayed ACK 与 Nagle 算法有异曲同工之妙，Delayed ACK 很好理解，当 TCP 接收到数据时，并不会立即发送 ACK 给对方，相反，它会等待应用层产生数据，以便将 ACK 和数据一起发送(在 Linux 最多等待 40ms)。
+TCP 的 **`Delayed ACK`** 与 Nagle 算法有异曲同工之妙，Delayed ACK 很好理解，**当 TCP 接收到数据时，并不会立即发送 ACK 给对方，相反，它会等待应用层产生数据，以便将 ACK 和数据一起发送**(在 Linux 最多等待 40ms)。
 
-我们知道，Nagle 算法会增加 TCP 发送数据的延迟，然而，在某些情况下，Delayed ACK 会放大这种延迟。一个常见的例子客户端 HTTP POST 协议，首先看看客户端的代码：
+我们知道，Nagle 算法会增加 TCP 发送数据的延迟，然而，在某些情况下，**`Delayed ACK`** 会放大这种延迟。一个常见的例子客户端 HTTP POST 协议，首先看看客户端的代码：
 
 ```c{.line-numbers}
 write(http_request_header);
@@ -833,7 +834,7 @@ write(http_request_body);
 // get response from server ...
 ```
 
-客户端调用两次 write() 来发送 HTTP POST 请求，服务端则需要调用两次 read() 读取客户端的 HTTP 请求：
+客户端调用两次 write() 来发送 **`HTTP POST`** 请求，服务端则需要调用两次 read() 读取客户端的 HTTP 请求：
 
 ```c{.line-numbers}
 http_request_header = read(...);
@@ -841,22 +842,22 @@ http_request_body = read(...);
 // write response to client ...
 ```
 
-通常来说，HTTP 请求的 header 和 body 都是小的 segment，但由于 TCP 默认开启 Nagle 算法，因此客户端在发送请求的 header 之后，如果还未收到 ACK，则不能发送 body。
+通常来说，HTTP 请求的 header 和 body 都是小的 segment，但由于 TCP 默认开启 Nagle 算法，因此客户端在发送请求的 header 之后，**如果还未收到 ACK，则不能发送 body**。
 
 <div align="center">
     <img src="高级IO函数_static/8.png" width="330"/>
 </div>
 
-Server 在收到请求的 header 之后，由于还没有收到请求的 body，因此无法立即产生HTTP 响应给客户端，这就导致了 http_request_header 的 ACK 大概会延迟 40ms 才发送。
+Server 在收到请求的 header 之后，由于还没有收到请求的 body，因此无法立即产生HTTP 响应给客户端，**这就导致了 http_request_header 的 ACK 大概会延迟 40ms 才发送**。
 
 为避免这种延迟的出现，需要做两件事：
 
-- 设置 TCP_NODELAY 选项。
+- 设置 **`TCP_NODELAY`** 选项。
 - 将客户端的两次 write() 合并成一个，避免服务端的 Delayed ACK。
 
 **3) Scatter-Gather I/O**
 
-write() 函数负责将应用程序缓冲区的数据写入内核缓冲区中，那么合并两次 write() 操作，一种常见的做法是先分配一块比较大的缓冲区，接着将两块小的缓冲区的数据依次拷贝到这块大的缓冲区中，最后调用 write() 一次性写入这块大的缓冲区的数据。然而这种做法带来不小的开销，一次内存分配操作和两次 memcpy() 操作。幸运的是，Linux提供了 writev() 函数，它可以将几块不连续的缓冲区的数据写入内核中。
+write() 函数负责将应用程序缓冲区的数据写入内核缓冲区中，那么合并两次 write() 操作，一种常见的做法是先分配一块比较大的缓冲区，接着将两块小的缓冲区的数据依次拷贝到这块大的缓冲区中，最后调用 write() 一次性写入这块大的缓冲区的数据。然而这种做法带来不小的开销，一次内存分配操作和两次 memcpy() 操作。幸运的是，Linux 提供了 writev() 函数，它可以将几块不连续的缓冲区的数据写入内核中。
 
 ```C{.line-numbers}
 struct iovec iov[2];
@@ -869,7 +870,7 @@ ssize_t nwritten = writev(fd, iov, 2);
 
 **4) TCP_CORK**
 
-大多数 Web Server 为了提高性能，在发送数据是并不会直接使用 write()，一个典型的例子就是，Web Server 响应客户端请求的时候，它需要先发送 HTTP 响应 header，接着发送网页的内容，而网页的内容存在于磁盘中，为了减少数据的拷贝开销，通常是使用 sendfile() 去发送页面内容的，这种情况下，应用程序就不需要在用户态分配内存来存储页面内容了。
+大多数 Web Server 为了提高性能，在发送数据是并不会直接使用 write()，一个典型的例子就是，Web Server 响应客户端请求的时候，它需要先发送 HTTP 响应 header，接着发送网页的内容，**而网页的内容存在于磁盘中，为了减少数据的拷贝开销，通常是使用 sendfile() 去发送页面内容的**，这种情况下，应用程序就不需要在用户态分配内存来存储页面内容了。
 
 ```c{.line-numbers}
 const char *filename = "index.html";
@@ -878,16 +879,16 @@ write(http_resp_header);
 sendfile(sockfd, fd, &off, len);
 ```
 
-为了发送 HTTP 响应，Server 调用了一次 write() 和一次 sendfile()，在开启 TCP_NODELAY 的情况下，这会导致至少两个 TCP segment 发送出去。但更多时候页面的数据是很少的，在这种情况下，write() 会发送一个 segment，sendfile() 也会发送一个 segment，那么有没有办法让这两个 segment 合并在一起再发送出去呢？
+为了发送 HTTP 响应，Server 调用了一次 write() 和一次 sendfile()，在开启 **`TCP_NODELAY`** 的情况下，这会导致至少两个 TCP segment 发送出去。但更多时候页面的数据是很少的，在这种情况下，write() 会发送一个 segment，sendfile() 也会发送一个 segment，那么有没有办法让这两个 segment 合并在一起再发送出去呢？
 
-为解决这个问题，Linux 提供了 TCP_CORK 选项，如果在某个 TCP socket 上开启了这个选项，那就相当于在这个 socket 的出口堵上了塞子，往这个 socket 写入的数据都会聚集起来。虽然堵上了塞子，但是 segment 总得发送，不然数据会塞满整个 TCP 发送缓冲区的，那么什么时候塞子会打开呢？下面几种情况都会导致这个塞子打开，这样 TCP 就能继续发送 segment 出来了。
+为解决这个问题，Linux 提供了 **`TCP_CORK`** 选项，如果在某个 TCP socket 上开启了这个选项，**那就相当于在这个 socket 的出口堵上了塞子，往这个 socket 写入的数据都会聚集起来**。虽然堵上了塞子，但是 segment 总得发送，不然数据会塞满整个 TCP 发送缓冲区的，那么什么时候塞子会打开呢？下面几种情况都会导致这个塞子打开，这样 TCP 就能继续发送 segment 出来了。
 
-- 程序取消设置 TCP_CORK 这个选项。
+- 程序取消设置 **`TCP_CORK`** 这个选项。
 - socket 聚集的数据大于一个 MSS 的大小。
 - 自从堵上塞子写入第一个字节开始，已经经过 200ms。
 - socket 被关闭了。
 
-一旦满足上面的任何一个条件，TCP 就会将数据发送出去。对于 Server 来说，发送 HTTP 响应既要发送尽量少的 segment，同时又要保证低延迟，那么需要在写完数据后显式取消设置 TCP_CORK 选项，让数据立即发送出去：
+一旦满足上面的任何一个条件，TCP 就会将数据发送出去。对于 Server 来说，发送 HTTP 响应既要发送尽量少的 segment，同时又要保证低延迟，那么需要在写完数据后显式取消设置 **`TCP_CORK`** 选项，让数据立即发送出去：
 
 ```c{.line-numbers}
 int state = 1;
@@ -897,3 +898,4 @@ sendfile(sockfd, fd, &off, len);
 state = 0;
 setsockopt(sockfd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 ```
+
