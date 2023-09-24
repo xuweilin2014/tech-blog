@@ -86,7 +86,7 @@ select 函数修改由指针 readset、writeset 和 exceptset 所指向的的描
 满足下列四个条件中的任何一个时，一个套接字准备好写。
 
 1. **套接字内核发送缓冲区中的可用字节数大于或等于其低水位标记（有空间可以写入发送数据）**。此时可以无阻塞的写该 socket，并且写操作返回的字节数大于 0。我们可以使用 SO_SNDLOWAT 套接字选项来设置该套接字的低水位标记。对于 TCP 和 UDP 套接字而言， 其默认值通常为 2048。
-2. **该连接的写半部关闭（也就是主动发送 FIN 包的 TCP 连接）**。对这样的套接字的写操作将产生 SIGPIPE 信号。这里解释一下原因，**可以通过调用 shutdown(SHUT_WR) 来关闭连接的写半部，这个函数都会使得套接字发送缓冲区的内容被发送到对端**，这样其发送缓冲区中的可用字节数大于等于其低水位标记，所以可写。但是由于写半部已经被关闭，因此会产生 SIGPIPE 信号。
+2. **该连接的写半部关闭（也就是主动发送 FIN 包的 TCP 连接）**。对这样的套接字的写操作将产生 **`SIGPIPE`** 信号。这里解释一下原因，**可以通过调用 `shutdown(SHUT_WR)` 来关闭连接的写半部，这个函数都会使得套接字发送缓冲区的内容被发送到对端**，这样其发送缓冲区中的可用字节数大于等于其低水位标记，所以可写。但是由于写半部已经被关闭，因此会产生 **`SIGPIPE`** 信号。
 3. **使用非阻塞式 connect 的套接字已建立连接**（也就是使用此 select 来监听建立连接的套接字，如果该套接字能够和服务器建立好连接，那么此套接字可写，可以使用此套接字往服务器发送消息，不会阻塞），或者 connect 已经以失败告终。
 4. 其上有一个套接字错误待处理。对这样的套接字的写操作将不阻塞并返回 -1 (也就是返回一个错误) ，同时把 errno 设置成确切的错误条件。
 
@@ -354,6 +354,135 @@ select 的调用过程如下所示：
 - select 支持的文件描述符数量太小了，默认是 1024
 
 不过 select 目前几乎在所有的平台上支持，其良好跨平台支持也是它的一个优点。
+
+### 7.select 处理带外数据
+
+socket 上接收到**普通数据和带外数据**都将使 select 返回，但 socket 处于不同的就绪状态：前者处于可读状态，后者处于异常状态。
+
+```c{.line-numbers}
+// tcp_server.c
+
+#define SERV_PORT 9523
+#define BUFFER_SIZE 1024
+
+int main() {
+    int cfd, lfd;
+    int ret = 0;
+    struct sockaddr_in serv_addr, clit_addr;
+    socklen_t clit_addr_len;
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    lfd = socket(PF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        sys_err("socket error");
+    }
+
+    int val = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    listen(lfd, 256);
+
+    clit_addr_len = sizeof(clit_addr);
+    cfd = accept(lfd, (struct sockaddr *) &clit_addr, &clit_addr_len);
+
+    if (cfd < 0) {
+        if (errno == ECONNABORTED) {
+            printf("accept: connect reset by peer\n");
+        }
+        return 1;
+    }
+
+    char normal_buf[1024];
+    char oob_buf[1024];
+    fd_set read_fds;
+    fd_set exception_fds;
+    FD_ZERO(&read_fds);
+    FD_ZERO(&exception_fds);
+
+    while (1) {
+        memset(normal_buf, '\0', sizeof(normal_buf));
+        memset(oob_buf, '\0', sizeof(oob_buf));
+
+        /* 每次调用 select 前都需要重新在 read_fds 和 exception_fds 中设置文件描述符 cfd，
+         * 因为每次事件发生之后，文件描述符集合将被内核修改
+         */
+        FD_SET(cfd, &read_fds);
+        FD_SET(cfd, &exception_fds);
+        ret = select(cfd + 1, &read_fds, NULL, &exception_fds, NULL);
+        if (ret < 0) {
+            printf("selection failure\n");
+            break;
+        }
+
+        /* 对于可读事件，采用普通的 recv 函数读取数据 */
+        if (FD_ISSET(cfd, &read_fds)) {
+            ret = recv(cfd, normal_buf, sizeof(normal_buf) - 1, 0);
+            if (ret <= 0) {
+                break;
+            }
+            printf("get %d bytes of normal data: %s\n", ret, normal_buf);
+        }
+
+        /* 对于异常事件，采用带 MSG_OOB 标志的 recv 函数读取带外数据 */
+        if (FD_ISSET(cfd, &exception_fds)) {
+            ret = recv(cfd, oob_buf, sizeof(oob_buf) - 1, MSG_OOB);
+            if (ret <= 0) {
+                break;
+            }
+            printf("get %d bytes of oob data: %s\n", ret, oob_buf);
+        }
+    }
+
+    close(cfd);
+    close(lfd);
+    return 0;
+}
+```
+
+```c{.line-numbers}
+// tcp_client.c
+
+int main() {
+    int cfd;
+    int counter = 10;
+    char buf[BUFFER_SIZE];
+    unsigned int ip = 0;
+    int sendbuf = 2400;
+    int len = sizeof(sendbuf);
+
+    // 服务器地址结构
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    inet_pton(AF_INET, "127.0.0.1", &ip);
+    serv_addr.sin_addr.s_addr = ip;
+
+    cfd = socket(AF_INET, SOCK_STREAM, 0);
+    setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sendbuf, sizeof(sendbuf));
+    getsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sendbuf, (socklen_t *) &len);
+    printf("the tcp send buffer size after setting is %d\n", sendbuf);
+
+    connect(cfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr));
+
+    send(cfd, "123456", 6, 0);
+    send(cfd, "90X", 3, MSG_OOB);
+    close(cfd);
+    return 0;
+}
+```
+
+首先运行 tcp_server.c 进程，监听 127.0.0.1:9523，然后让 tcp_client.c 进程发送 "123456" 这 6 个字符，然后再发送 "90X" 这三个字符，其中 "X" 是紧急字符。最后 tcp_server 运行的结果如下所示：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/server
+get 6 bytes of normal data: 123456
+get 2 bytes of normal data: 90
+get 1 bytes of oob data: X
+
+Process finished with exit code 0
+```
 
 ## 二、poll
 
@@ -947,6 +1076,355 @@ int main(void)
 </div>
 
 程序五相对程序四仅仅是修改 ET 模式为默认的 LT 模式，我们发现程序再次死循环。这时候原因已经很清楚了，因为当向 buffer 写入 "welcome to epoll's world!" 后，虽然 buffer 没有输出清空，但是 LT 模式下只有 buffer 有写空间就返回写就绪，所以会一直输出 "welcome to epoll's world!"，当 buffer 满的时候，buffer 会自动刷清输出，同样会造成 epoll_wait 返回写就绪。
+
+#### 2.6 程序六
+
+下面这个程序将介绍 epoll 函数的 LT 与 ET 工作模式：
+
+```c{.line-numbers}
+#define MAX_EVENT_NUMBER 1024
+#define BUFFER_SIZE 10
+#define SERV_PORT 9523
+#define TRUE 1
+#define FALSE 0
+
+/* 将文件描述符设置成阻塞的 */
+int setnonblocking(int fd) {
+    int old_option = fcntl(fd, F_GETFL);
+    int new_option = old_option | O_NONBLOCK;
+    fcntl(fd, F_SETFL, new_option);
+    return old_option;
+}
+
+/* 将文件描述符 fd 上的 EPOLLIN 注册到 epollfd 指示的 epoll 内核事件表中，参数 enable_et 指定是否对 fd 启用 ET 模式 */
+void addfd(int epollfd, int fd, int enable_et) {
+    struct epoll_event event;
+    event.data.fd = fd;
+    event.events = EPOLLIN;
+
+    if (enable_et) {
+        event.events |= EPOLLET;
+    }
+
+    epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
+    setnonblocking(fd);
+}
+
+/* LT 模式的工作流程 */
+void lt(struct epoll_event* events, int number, int epollfd, int listenfd) {
+    char buf[BUFFER_SIZE];
+    for (int i = 0; i < number; ++i) {
+        int sockfd = events[i].data.fd;
+
+        // 如果已经就绪的 sockfd 是监听 listenfd，那么直接调用 accept 获取到客户端的连接 connfd，
+        // 然后将 connfd 添加到 epollfd 的内核事件注册表中
+        if (sockfd == listenfd) {
+            struct sockaddr_in client_address;
+            socklen_t client_addrlength = sizeof(client_address);
+
+            int connfd = accept(listenfd, (struct sockaddr*)&client_address, &client_addrlength);
+            // 对 connfd 禁用 ET 模式
+            addfd(epollfd, connfd, FALSE);
+
+        } else if (events[i].events & EPOLLIN) {
+            /* 只要 socket 读缓存中还有未被读出的数据，这段代码就被触发，所以只需要读取一次就可以 */
+            printf("event trigger once\n");
+            memset(buf, '\0', BUFFER_SIZE);
+
+            int ret = recv(sockfd, buf, BUFFER_SIZE - 1, 0);
+            if (ret <= 0) {
+                close(sockfd);
+                continue;
+            }
+
+            printf("get %d bytes of content: %s\n", ret, buf);
+
+        } else {
+            printf("something else happened \n");
+        }
+    }
+}
+
+/* ET 模式的工作流程 */
+void et(struct epoll_event* events, int number, int epollfd, int listenfd) {
+    char buf[BUFFER_SIZE];
+    for (int i = 0; i < number; ++i) {
+        int sockfd = events[i].data.fd;
+
+        // 同理，如果是 listenfd 就绪，那么就说明有新的客户端到达
+        if (sockfd == listenfd) {
+            struct sockaddr_in client_address;
+            socklen_t client_addrlength = sizeof(client_address);
+            int connfd = accept(listenfd, (struct sockaddr*) &client_address, &client_addrlength);
+            // 将新的客户端的 socket 文件描述符添加到内核的事件注册表中，进行监听
+            addfd(epollfd, connfd, TRUE);
+
+        } else if (events[i].events & EPOLLIN) {
+            /* 这段代码不会被重复触发，所以我们循环读取数据，以确保把 socket 读缓存中的所有数据读出 */
+            printf("event trigger once\n");
+            while (1) {
+                memset(buf, '\0', BUFFER_SIZE);
+                int ret = recv(sockfd, buf, BUFFER_SIZE - 1, 0);
+                if (ret < 0) {
+                    /* 对于非阻塞的 IO，下面的条件成立表示数据已经被全部读取完毕了，此后，epoll 就能再次触发 sockfd 上的 EPOLLIN 事件，以驱动下一次读操作 */
+                    /* 只要接收缓冲区中有数据，不管 socket 是 blocking 还是 non-blocking，都是立即返回 */
+                    /* 接收缓冲区中没有数据时，blocking 模式会等待，nonblocking 模式下会立即返回 -1，errno = EAGAIN 或者 errno = EWOULDBLOCK */
+                    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                        printf("read later\n");
+                        break;
+                    }
+
+                    close(sockfd);
+                    break;
+
+                // 客户端关闭连接
+                } else if (ret == 0) {
+                    close(sockfd);
+                } else {
+                    printf("get %d bytes of content: %s\n", ret, buf);
+                }
+            }
+        } else {
+            printf("something else happened \n");
+        }
+    }
+}
+
+int main() {
+
+    int cfd, lfd;
+    int ret = 0;
+    struct sockaddr_in serv_addr, clit_addr;
+    socklen_t clit_addr_len;
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    lfd = socket(PF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        printf("socket error");
+    }
+
+    int val = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    listen(lfd, 256);
+
+    struct epoll_event events[MAX_EVENT_NUMBER];
+    int epollfd = epoll_create(MAX_EVENT_NUMBER);
+    addfd(epollfd, lfd, TRUE);
+
+    while (1) {
+        int ret = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
+        if (ret < 0) {
+            printf("epoll failure\n");
+            break;
+        }
+
+        // lt(events, ret, epollfd, lfd);
+        et(events, ret, epollfd, lfd);
+    }
+
+    close(lfd);
+    return 0;
+}
+```
+
+首先程序使用 ET 模式运行，在检测到 **`EPOLLIN`** 事件之后，需要不断循环读取套接字中的数据，直到数据全部读取完毕，因此 ET 模式下事件被触发的次数要少很多，shell 中 telnet 发送的数据如下所示：
+
+```shell
+xwl@xwl-vm:~/桌面$ telnet 127.0.0.1 9523
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+^]
+telnet> 
+AAAABBBBCCCCDDDDEEEEFFFF
+```
+
+最后程序运行得到的结果如下所示：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/lt_et
+event trigger once
+get 9 bytes of content: AAAABBBBC
+get 9 bytes of content: CCCDDDDEE
+get 8 bytes of content: EEFFFF
+
+read later
+```
+
+接下来程序使用 LT 模式来运行，shell 中 telnet 发送的数据如下：
+
+```shell
+xwl@xwl-vm:~/桌面$ telnet 127.0.0.1 9523
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
+^]
+telnet> 
+AAAABBBBCCCCDDDDEEEEFFFF
+
+```
+
+最后程序运行得到的结果如下所示，可以看到同样的数据 **`EPOLLIN`** 事件被触发了三次：
+
+```shell
+/home/xuweilin/CLionProjects/linux_programming/cmake-build-debug/lt_et
+event trigger once
+get 9 bytes of content: AAAABBBBC
+event trigger once
+get 9 bytes of content: CCCDDDDEE
+event trigger once
+get 8 bytes of content: EEFFFF
+```
+
+#### 2.7 EPOLLONESHOT 事件
+
+**即使我们使用 ET 模式，一个 socket 上的某个事件还是可能被触发多次**。这在并发程序中就会引起一个问题。比如一个线程（或进程，下同）在读取完某个 socket 上的数据后开始处理这些数据，而在数据的处理过程中该 socket 上又有新数据可读 (**`EPOLLIN`** 再次被触发），此时另外一个线程被唤醒来读取这些新的数据。于是就出现了两个线程同时操作一个 socket 的局面。这当然不是我们期望的。**我们期望的是一个 socket 连接在任一时刻都只被一个线程处理**。这一点可以使用 epoll 的 **`EPOLLONESHOT`** 事件实现。
+
+对于注册了 **`EPOLLONESHOT`** 事件的文件描述符，操作系统最多触发其上注册的一个可读、可写或者异常事件，且只触发一次，除非我们使用 epoll_ctl 函数重置该文件描述符上注册的 **`EPOLLONESHOT`** 事件。这样，当一个线程在处理某个 socket 时，其他线程是不可能有机会操作该 socket 的。但反过来思考，注册了 **`EPOLLONESHOT`** 事件的 socket 一旦被某个线程处理完毕，该线程就应该立即重置这个 socket 上的 **`EPOLLONESHOT`** 事件，以确保这个 socket 下一次可读时，其 **`EPOLLIN`** 事件能被触发，进而让其他工作线程有机会继续处理这个 socket。
+
+```c{.line-numbers}
+#define MAX_EVENT_NUMBER 1024
+#define BUFFER_SIZE 1024
+#define TRUE 1
+#define FALSE 0
+#define SERV_PORT 9523
+
+struct fds {
+    int epollfd;
+    int sockfd;
+};
+
+typedef struct fds fds;
+
+int setnonblocking(int fd) {
+    int old_option = fcntl(fd, F_GETFL);
+    int new_option = old_option | O_NONBLOCK;
+    fcntl(fd, F_SETFL, new_option);
+    return old_option;
+}
+
+/* 将 fd 上的 EPOLLIN 和 EPOLLET 事件注册到 epollfd 指示的 epoll 内核事件表中，参数 oneshot 指定是否注册
+ * fd 上的 EPOLLONESHOT 事件
+ */
+void addfd(int epollfd, int fd, int oneshot) {
+    struct epoll_event event;
+    event.data.fd = fd;
+    event.events = EPOLLIN | EPOLLET;
+    if (oneshot) {
+        event.events |= EPOLLONESHOT;
+    }
+
+    epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
+    setnonblocking(fd);
+}
+
+/* 重置 fd 上的事件，这样操作之后，尽管 fd 上的 EPOLLONESHOT 事件被注册，但是操作系统仍然会触发 fd 上的 EPOLLIN 事件，且只触发一次 */
+void reset_oneshot(int epollfd, int fd) {
+    struct epoll_event event;
+    event.data.fd = fd;
+    event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+    // 重置 fd 上的 EPOLLONESHOT 事件
+    epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
+}
+
+/* 工作线程 */
+void* worker(void* arg) {
+    int sockfd = ((fds*) arg)->sockfd;
+    int epollfd = ((fds*) arg)->epollfd;
+    printf("start new thread to receive data on fd: %d\n", sockfd);
+    char buf[BUFFER_SIZE];
+
+    /* 循环读取 sockfd 上的数据，直到遇到 EAGAIN 或者 EWOULDBLOCK 错误*/
+    while (1) {
+        memset(buf, '\0', BUFFER_SIZE);
+        int ret = recv(sockfd, buf, BUFFER_SIZE - 1, 0);
+        if (ret == 0) {
+            close(sockfd);
+            printf("foreiner closed the connection\n");
+            break;
+        } else if (ret < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                reset_oneshot(epollfd, sockfd);
+                printf("read later\n");
+                break;
+            }
+        } else {
+            printf("%ld get content: %s\n", syscall(SYS_gettid), buf);
+            /* 休眠 5s，模拟数据处理过程 */
+            sleep(5);
+        }
+    }
+
+    printf("end thread receiving data on fd: %d\n", sockfd);
+}
+
+int main() {
+
+    int cfd, lfd;
+    int ret = 0;
+    struct sockaddr_in serv_addr, clit_addr;
+    socklen_t clit_addr_len;
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERV_PORT);
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    lfd = socket(PF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        printf("socket error");
+    }
+
+    int val = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
+    bind(lfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    listen(lfd, 256);
+
+    struct epoll_event events[MAX_EVENT_NUMBER];
+    int epollfd = epoll_create(MAX_EVENT_NUMBER);
+    /* 注意，监听 socket listenfd 上是不能注册 EPOLLONESHOT 事件的，否则应用程序只能处理一个客户连接，
+     * 因为后续的客户连接请求不再触发 listenfd 上的 EPOLLIN 事件
+     */
+    addfd(epollfd, lfd, FALSE);
+
+    while (1) {
+        int ret = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
+        if (ret < 0) {
+            printf("epoll failure\n");
+            break;
+        }
+
+        for (int i = 0; i < ret; ++i) {
+            int sockfd = events[i].data.fd;
+
+            if (sockfd == lfd) {
+                struct sockaddr_in client_address;
+                socklen_t client_addrlength = sizeof(client_address);
+                cfd = accept(sockfd, (struct sockaddr*) &client_address, &client_addrlength);
+                /* 对每个非监听文件描述符都注册 EPOLLONESHOT 事件 */
+                addfd(epollfd, cfd, TRUE);
+            } else if (events[i].events & EPOLLIN) {
+                pthread_t thread;
+                fds fds_for_new_worker;
+                fds_for_new_worker.epollfd = epollfd;
+                fds_for_new_worker.sockfd = sockfd;
+                /* 新启动一个工作线程为 sockfd 服务 */
+                pthread_create(&thread, NULL, worker, (void*) &fds_for_new_worker);
+            } else {
+                printf("something else happened\n");
+            }
+        }
+    }
+
+    close(lfd);
+    return 0;
+}
+```
+
+上述程序当有新的客户端连接到来时，都会将客户端描述符 cfd 注册到内核事件表中，并且设置 **`EPOLLONESHOT`** 事件，这使得每个 cfd 上的可读、可写以及异常事件只会被触发一次，后续再想触发，必须得重置 **`EPOLLONESHOT`** 事件。每当 cfd 上的可读事件被唤醒时，都会新创建一个线程，来读取 cfd 上的数据（由于设置了 **`EPOLLONESHOT`**，因此即使 cfd 上又有新数据到来，cfd 也不会被唤醒），直到遇到 **`EAGAIN`** 或者 **`EWOULDBLOCK`** 这两个异常信息，就重新设置 **`EPOLLONESHOT`** 事件（方便再次唤醒），然后线程结束。
 
 最后总结 ET 和 LT 的区别。
 

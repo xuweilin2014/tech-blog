@@ -272,7 +272,7 @@ nc -v -l 0.0.0.0 3000
 
 完整代码如下：
 
-```cpp{.line-numbers}
+```c{.line-numbers}
   /**
    * Linux 下正确的异步的 connect 写法，linux_nonblocking_connect.cpp
    */
@@ -370,13 +370,13 @@ nc -v -l 0.0.0.0 3000
 }
 ```
 
-如果描述符变为可写，我们就调用 getsockopt 取得套接字的待处理错误(使用 SO_ERROR 套接字选项)。**如果连接成功建立，该值将为 0。如果连接建立发生错误，该值就是对应连接错误的 errno值（譬如 ECONNREFUSED、ETIMEDOUT 等）**。这里我们会遇到第一个移植性问题。如果发生错误，getsockopt 源自 Berkeley 的实现将在我们的变量 error 中返回待处理错误，getsockopt 本身返回 0；然而 Solaris 却让 getsockopt 返回 -1，并把 errno 变量置为待处理错误。
+如果描述符变为可写，我们就调用 getsockopt 取得套接字的待处理错误(使用 **`SO_ERROR`** 套接字选项)。**如果连接成功建立，该值将为 0。如果连接建立发生错误，该值就是对应连接错误的 errno 值（譬如 `ECONNREFUSED`、`ETIMEDOUT` 等）**。这里我们会遇到第一个移植性问题。如果发生错误，getsockopt 源自 Berkeley 的实现将在我们的变量 error 中返回待处理错误，getsockopt 本身返回 0；然而 Solaris 却让 getsockopt 返回 -1，并把 errno 变量置为待处理错误。
 
 当然，在实际的项目中，第 3 个步骤中 Linux 平台上你也可以使用 poll 函数来判断 socket 是否可写；在 Windows 平台上你可以使用 WSAEventSelect 或 WSAAsyncSelect 函数判断连接是否成功，这里暂且仅以 select 函数为例。
 
 其次，既然我们不能假设套接字的可写条件是 select 返回套接字操作成功条件的唯一方法，下面是取代 getsockopt 调用的几种办法：
 
-- 调用 `getpeername` 代替 `getsockopt`。**如果 `getpeername` 以 `ENOTCONN` 错误失败返回，那么连接建立已经失败**，我们必须接着以 SO_ERROR 调用 `getsockopt` 取得套接字上待处理的错误
+- 调用 `getpeername` 代替 `getsockopt`。**如果 `getpeername` 以 `ENOTCONN` 错误失败返回，那么连接建立已经失败**，我们必须接着以 **`SO_ERROR`** 调用 `getsockopt` 取得套接字上待处理的错误
 - **以值为 0 的长度参数调用 read**。如果 read 失败，那么 connect 已经失败，read 返回的 errno 给出了连接失败的原因。如果连接建立成功，那么 read 应该返回。
 - **再调用 connect 一次**。它应该失败，如果错误是 `EISCONN`，那么套接字已经连接，也就是说第一次连接已经成功。
 
@@ -384,7 +384,7 @@ nc -v -l 0.0.0.0 3000
 
 服务端的代码如下所示：
 
-```c{.line-numbers}
+```cpp{.line-numbers}
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
