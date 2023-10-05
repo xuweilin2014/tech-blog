@@ -95,7 +95,7 @@ int pipe(int pipefd[2]);
 int socketpair(int domain, int type, int protocol, int fd[2]);
 ```
 
-**`socketpair`** 前三个参数的含义与 **`socket`** 系统调用的三个参数完全相同，但 domain 只能使用 UNIX 本地域协议族 **`AF_UNIX`**，因为我们仅能在本地使用这个双向管道。最后一个参数则和 **`pipe`** 系统调用的参数一样，**只不过 **`socketpair`** 创建的这对文件描述符都是既可读又可写的。**`socketpair`** 成功时返回 0，失败时返回 -1 并设置 errno。
+**`socketpair`** 前三个参数的含义与 **`socket`** 系统调用的三个参数完全相同，但 domain 只能使用 UNIX 本地域协议族 **`AF_UNIX`**，因为我们仅能在本地使用这个双向管道。最后一个参数则和 **`pipe`** 系统调用的参数一样，**只不过 **`socketpair`** 创建的这对文件描述符都是既可读又可写的。**`socketpair` 成功时返回 0，失败时返回 -1 并设置 errno。
 
 #### 4.管道示例 1
 

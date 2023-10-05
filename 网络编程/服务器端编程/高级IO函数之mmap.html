@@ -1,0 +1,1106 @@
+<!DOCTYPE html><html><head>
+      <title>高级IO函数之mmap</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:///c:\Users\许纬林\.vscode\extensions\shd101wyy.markdown-preview-enhanced-0.8.0\crossnote\dependencies\katex\katex.min.css">
+      
+      
+      
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+
+      </style>
+      </head><body for="html-export">
+    
+    
+      <div class="crossnote markdown-preview  ">
+      <h1 id="高级-io-函数之-mmap">高级 I/O 函数之 mmap </h1>
+<h2 id="1mmap-函数原理讲解">1.mmap 函数原理讲解 </h2>
+<p>首先尝试从内核的角度来介绍一下 mmap 函数，我们都知道虚拟地址空间的概念，它向每个运行进程提供了同样的系统视图，这使得多个进程可以同时运行，而不会干扰到其他进程内存中的内容。其本质上是通过页表将虚拟地址空间中的页与物理内存中的页帧关联起来。</p>
+<div align="center">
+    <img src="高级IO函数_static/9.png" width="550">
+</div>
+<p>而虚拟内存区域在内核中实现如下。Linux 使用 <strong><code>task_struct</code></strong> 来表示进程/线程，因为 Linux 内核本身并不区分进程和线程，都表达为一个 <strong><code>task_struct</code></strong> 供内核调度。与每个进程相关联的虚拟内存信息使用结构体 <strong><code>mm_struct</code></strong> 表示。而具体的每个虚拟内存区域使用 <strong><code>vm_area_struct</code></strong> 表示，并且将这些 <strong><code>vm_area_struct</code></strong> 组织为线性链表和红黑树数据结构。也就是说每个进程的虚拟内存区域都在这个数据结构里。</p>
+<div align="center">
+    <img src="高级IO函数_static/10.png" width="550">
+</div>
+<p><strong><code>vm_area_struct</code></strong> 结构体里保存了这块区域的起始地址和结束地址，以及 <strong><code>file</code></strong> 对象，如果没有与文件相关联的话，<strong><code>file</code></strong> 为空。具体还有其他的属性如下。</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token punctuation">{</span>
+    <span class="token comment">/* 所属地址空间。 */</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span> vm_mm<span class="token punctuation">;</span> 
+    <span class="token comment">/* vm_mm 内的起始地址。 */</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_start<span class="token punctuation">;</span>   
+    <span class="token comment">/* 在 vm_mm 内结束地址之后的第一个字节的地址。 */</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_end<span class="token punctuation">;</span>     
+    
+    <span class="token comment">/* 各进程的虚拟内存区域链表，按地址排序 */</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span>vm_next<span class="token punctuation">;</span>
+    <span class="token comment">/* 该虚拟内存区域的访问权限。 */</span>
+    <span class="token class-name">pgprot_t</span> vm_page_prot<span class="token punctuation">;</span> 
+    <span class="token comment">/* 标志，如下列出。 */</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_flags<span class="token punctuation">;</span> 
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_node</span> vm_rb<span class="token punctuation">;</span>
+    <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+    <span class="token comment">/* 后备存储器的有关信息： */</span>
+    <span class="token comment">/* （vm_file 内）的偏移量，单位是 PAGE_SIZE，不是 PAGE_CACHE_SIZE */</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_pgoff<span class="token punctuation">;</span>
+    <span class="token comment">/* 映射到的文件（可能是 NULL）。 */</span> 
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span> vm_file<span class="token punctuation">;</span> 
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>那么现在来看 mmap 实现其实本质上就是新建了一个 <strong><code>vm_area_struct</code></strong> 对象，然后插入到红黑树的合适位置 (<strong><code>vm_area_struct</code></strong> 根据指向的区域起始地址有序)，然后什么都不干。那么当进程试图访问这段内存区域中包含的虚拟地址时，会发生如下情况：</p>
+<ol>
+<li>通过页表发现物理内存中没有关联页（不在物理内存中）。</li>
+<li>处理器接下来触发一个缺页异常，发送到内核。</li>
+<li><strong>内核会搜索负责缺页区域的进程地址空间的</strong> <strong><code>vm_area_struct</code></strong> 红黑树，找到对应的虚拟内存区域，发现与之关联的文件对象。</li>
+<li>分配物理内存页，并从文件中读取所需数据填充，如果不特别指明的话，内存页是从内核空间中分配。</li>
+<li>填充页表，应用程序恢复执行，重新执行指令。</li>
+</ol>
+<p>总结上述内容，原理部分就是相当于把文件内容映射成一个内存页，当访问的对应的内存页的时候，触发缺页中断，然后由操作系统走文件系统驱动去读取文件。接下来详细介绍 <strong><code>mmap</code></strong> 的原理，</p>
+<p>要知道，<strong><code>Windows</code></strong> 的文件系统驱动，默认都是 <strong><code>PAGING_IO</code></strong> 模式，按道理说 <strong><code>Windows</code></strong> 上的文件系统访问，默认都是 mmap 形式的变种，那么为什么各个操作系统又额外提供一套 mmap 的 API 呢？</p>
+<p>我们正常读写一个文件，用户代码通常需要先申请一块内存，然后把这块内存下发给内核，然后通过文件系统代码读、写文件。但是这么做有一个性能问题。用户代码的这块内存，通常是不对齐的（不对齐到 4K 页），那么当文件系统要通过 DMA 的方式访问磁盘的时候，这块内存通常是不能直接作为 <strong><code>DMA buffer</code></strong> 下发到硬件驱动里。</p>
+<p>于是，用户要读一个文件，就需要内核先准备一个对齐的内存下发给驱动（也就是 block cache），驱动再下发给硬件，读好数据以后，再从内核的这个内存里复制到用户的内存，需要 1-2 次内存拷贝（memcpy），如果数据量比较巨大的话，拷贝的开销是很大的。</p>
+<p>而 mmap 就不一样，<strong>mmap 的内存是由内核初始化的，用户代码只是拿到了一个 fd，内核初始化这块内存以后，是可以直接交给文件系统，甚至是块设备驱动使用的</strong>，加上 Linux 的零拷贝（zero copy）技术，可以减少或者避免 memcpy 动作。同时这块内存又是对用户直接可见的，从内核态切换到用户态的过程中，不需要执行任何拷贝动作。</p>
+<blockquote>
+<p>可以理解成一般的进程读文件，所开辟的内存是进程自己开辟的用户态中的内存。而 mmap 进程读取的内存直接是内核中开辟的内存。内核的虚拟地址空间和应用进程的虚拟地址空间都会映射（共享）这块物理内存。</p>
+</blockquote>
+<h2 id="2mmap-详解">2.mmap 详解 </h2>
+<h3 id="21-四种不同的内存映射创建和使用方式">2.1 四种不同的内存映射创建和使用方式 </h3>
+<p>在 mmap 中根据映射变更的可见性，可以分为私有、共享映射，根据映射的类型，可以分为文件、匿名映射，因此得到的组合如下所示：</p>
+<div align="center">
+    <img src="高级IO函数_static/12.png" width="550">
+</div>
+<p><strong>1) 私有文件映射</strong></p>
+<p>映射的内容被初始化为一个文件区域中的内容。<strong>多个映射同一个文件的进程初始时会共享同样的内存物理分页</strong>，但系统使用<strong>写时复制技术</strong>使得一个进程对映射所做出的变更对其他进程不可见。这种映射的主要用途是使用一个文件的内容来初始化一块内存区域。</p>
+<p><strong>2) 私有匿名映射</strong></p>
+<p>每次调用 mmap() 创建一个私有匿名映射时都会产生一个新映射，该映射与同一（或不同）进程创建的其他匿名映射是不同的（即不会共享物理分页）。尽管子进程会继承其父进程的映射，但写时复制语义确保在 fork() 之后父进程和子进程不会看到其他进程对映射所做出的变更。<strong>私有匿名映射的主要用途是为一个进程分配新（用零填充）内存（如在分配大块内存时 malloc() 会为此而使用 mmap()）</strong>。</p>
+<p><strong>3) 共享文件映射</strong></p>
+<p>所有映射一个文件的同一区域的进程会共享同样的内存物理分页，这些分页的内容将被初始化为该文件区域。这种映射主要用于两个用途。第一，它允许内存映射 I/O，这表示一个文件会被加载到进程的虚拟内存中的一个区域中<strong>并且对该块内容的变更会自动被写入到这个文件中</strong>。这种映射的第二种用途是允许无关进程共享一块内容执行（快速）IPC。</p>
+<p><strong>4) 共享匿名映射</strong></p>
+<p>与私有匿名映射一样，每次调用 mmap() 创建一个共享匿名映射时<strong>都会产生一个新的、与任何其他映射不共享分页的</strong>截然不同的映射。这里的差别在于映射的分页不会被写时复制。这意味着当一个子进程在 fork() 之后继承映射时，父进程和子进程共享同样的 RAM 分页，并且一个进程对映射内容所做出的变更会对其他进程可见。共享匿名映射允许 IPC，<strong>但只有相关进程之间才能这么做</strong>。</p>
+<p>mmap 的 <strong><code>prot</code></strong> 参数指定了新内存映射上的保护信息，如果一个进程在访问一个内存区域时违反了该区域上的保护位，那么内核会向该进程发送一个 <strong><code>SIGSEGV</code></strong> 信号。底层硬件在保护粒度上的限制（如老式的 x86-32 架构）意味着在很多 UNIX 实现上 <strong><code>PROT_READ</code></strong> 会隐含 <strong><code>PROT_EXEC</code></strong>，反之亦然，并且在一些实现上指定 <strong><code>PROT_WRITE</code></strong> 会隐含 <strong><code>PROT_READ</code></strong>。但应用程序不应该依赖于这种行为。</p>
+<h3 id="22-解除映射区域-munmap">2.2 解除映射区域 munmap </h3>
+<p><strong><code>munmap()</code></strong> 系统调用执行的操作和 mmap() 相反，它从调用进程的虚拟地址空间中删除一个映射。一般来讲通常会解除整个映射。因此可以将 addr 指定为上一个 <strong><code>mmap()</code></strong> 调用返回的地址，并且 length 的值与 <strong><code>mmap()</code></strong> 调用中使用的 length 的值一样。</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code>addr <span class="token operator">=</span> <span class="token function">mmap</span><span class="token punctuation">(</span><span class="token constant">NULL</span><span class="token punctuation">,</span> length<span class="token punctuation">,</span> PROT_READ <span class="token operator">|</span> PROT_WRITE<span class="token punctuation">,</span> MAP_PRIVATE<span class="token punctuation">,</span> fd<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>addr <span class="token operator">==</span> MAP_FAILED<span class="token punctuation">)</span>
+    <span class="token function">errExit</span><span class="token punctuation">(</span><span class="token string">"mmap"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">/* Code for working with mapped region */</span>
+<span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">munmap</span><span class="token punctuation">(</span>addr<span class="token punctuation">,</span> length<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span> 
+    <span class="token function">errExit</span><span class="token punctuation">(</span><span class="token string">"munmap"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>或者也可以解除一个映射中的部分映射，这样原来的映射要么会收缩，要么会被分成两个。还可以指定一个跨越多个映射的地址范围，这样的话所有在范围内的映射都会被解除。如果在由 addr 和 length 指定的地址范围中不存在映射，那么 <strong><code>munmap()</code></strong> 将不起任何作用并返回 0（表示成功）。</p>
+<p>当一个进程终止或执行了一个 <strong><code>exec()</code></strong> 之后进程中所有的映射会自动被解除。</p>
+<h3 id="23-文件映射">2.3 文件映射 </h3>
+<p>在打开描述符 fd 引用的文件时必须要具备与 prot 和 flags 参数值匹配的权限。特别地，文件必须总是被打开以允许读取（即将文件中的内容读取到内存区域），并且如果在 flags 中指定了 <strong><code>PROT_WRITE</code></strong> 和 <strong><code>MAP_SHARED</code></strong>，那么文件必须总是被打开以允许读取和写入，这是因为指定了以上两个属性，进程对于映射区内容的修改会被写回到磁盘文件中，因此文件必须可写。</p>
+<h4 id="231-私有文件映射">2.3.1 私有文件映射 </h4>
+<p>私有文件映射最常见的两个用途如下所示：</p>
+<ul>
+<li>允许多个执行同一个程序或使用同一个共享库的进程共享同样的（只读的）文本段，它是从底层可执行文件或库文件的相应部分映射而来的。</li>
+</ul>
+<blockquote>
+<p>尽管可执行文件的文本段通常是被保护成只允许读取和执行访问（<strong><code>PROT_READ | PROT_EXEC</code></strong>），但在被映射时仍然使用了 <strong><code>MAP_PRIVATE</code></strong> 而不是 <strong><code>MAP_SHARED</code></strong>，这是因为<strong>调试器或自修改的程序能够修改程序文本（在修改了内存上的保护信息之后），而这样的变更是不应该发生在底层文件上或影响到其他进程的</strong>。</p>
+</blockquote>
+<ul>
+<li>映射一个可执行文件或共享库的初始化数据段。这种映射会被处理成私有使得对映射数据段内容的变更不会发生在底层文件上。</li>
+</ul>
+<h4 id="232-共享文件映射">2.3.2 共享文件映射 </h4>
+<p>共享文件映射存在两个用途：内存映射 I/O 和 IPC：</p>
+<p>内存映射：由于共享文件映射中的内容是从文件初始化而来的，并且对映射内容所做出的变更都会自动反应到文件上，因此可以简单地通过访问内存中的字节来执行文件 I/O，而依靠内核来确保对内存的变更会被传递到映射文件中。这项技术它是使用 <strong><code>read()</code></strong> 和 <strong><code>write()</code></strong> 来访问文件内容这种方法的替代方案。</p>
+<p>内存映射相比于传统的 <strong><code>read()/write()</code></strong> 函数优点有两个，第一个是减少了一次内核到用户空间的内存拷贝，第二个是节省了内存空间，当使用 read() 或 write() 时，数据将被保存在内核/用户空间两个缓冲区中。当使用 <strong><code>mmap()</code></strong> 时，内核空间和用户空间会共享同一个缓冲区（内核页表与用户页表中的表项指向相同的物理分页），对于多进程同理。</p>
+<p>共享文件映射也可以作为进程间通信的一种方式。</p>
+<h3 id="24-内存保护和文件访问模式交互">2.4 内存保护和文件访问模式交互 </h3>
+<p>从一般原则来讲，<strong><code>PROT_READ</code></strong> 和 <strong><code>PROT_EXEC</code></strong> 保护要求被映射的文件使用 <strong><code>O_RDONLY</code></strong> 或 <strong><code>O_RDWR</code></strong> 打开，而 <strong><code>PROT_WRITE</code></strong> 保护要求被映射的文件使用 <strong><code>O_RDWR</code></strong> 打开，这是因为如果映射区属性为 <strong><code>MAP_SHARED</code></strong>，那么在内存区中的修改会被写回到磁盘文件中，因此必须可写，如果映射区属性为 <strong><code>MAP_PRIVATE</code></strong>，那么文件可以以只读模式打开。</p>
+<p>对于不同的硬件架构，下述结论是适用的：</p>
+<ul>
+<li>所有内存保护组合与使用 <strong><code>O_RDWR</code></strong> 标记打开文件是兼容的</li>
+<li>没有内存保护组合 —— 哪怕仅仅是 <strong><code>PROT_WRITE</code></strong> —— 与使用 <strong><code>O_WRONLY</code></strong> 标记打开的文件是兼容的（导致 <strong><code>EACCES</code></strong> 错误的发生）。这与一些硬件架构不允许对一个分页的只写访问这样一个事实是一致的。使用 <strong><code>O_WRONLY</code></strong> 标记打开的文件是不能暴露文件的初始内容的。</li>
+<li>使用 <strong><code>O_RDONLY</code></strong> 标记打开一个文件的结果依赖于在调用 mmap() 时是否指定了 <strong><code>MAP_PRIVATE</code></strong> 或 <strong><code>MAP_SHARED</code></strong>。对于一个 <strong><code>MAP_PRIVATE</code></strong> 映射来讲，在 mmap() 中可以指定任意的内存保护组合——因为对 <strong><code>MAP_PRIVATE</code></strong> 分页内容做出的变更不会被写入到文件中，因此无法写入文件不会成为问题。对于一个 <strong><code>MAP_SHARED</code></strong> 映射来讲，唯一与 <strong><code>O_RDONLY</code></strong> 兼容的内存保护是 <strong><code>PROT_READ</code></strong> 和 (PROT_READ | PROT_EXEC)。这是符合逻辑的，因为一个 PROT_WRITE，MAP_SHARED 映射允许更新被映射的文件。</li>
+</ul>
+<h3 id="25-map_fixed">2.5 MAP_FIXED </h3>
+<p>在 mmap() flags 参数中指定 <strong><code>MAP_FIXED</code></strong> 标记会强制内核原样地解释 addr 中的地址，而不是只将其作为一种提示信息。如果指定了 <strong><code>MAP_FIXED</code></strong>，那么 addr 就必须是分页对齐的。</p>
+<p>存在一种可移植应用程序需要使用 <strong><code>MAP_FIXED</code></strong> 的情况。如果在调用 mmap() 时指定了 <strong><code>MAP_FIXED</code></strong>，并且内存区域的起始位置为 addr，覆盖的 length 字节与之前的映射的分页重叠了，那么重叠的分页会被新映射替代。使用这个特性可以可移植地将一个文件（或多个文件）的多个部分映射进一块连续的内存区域，如下所述。</p>
+<ol>
+<li>使用 mmap() 创建一个匿名映射。在 mmap() 调用中将 addr 指定为 NULL 并且不指定 <strong><code>MAP_FIXED</code></strong> 标记。这样就允许内核为映射选择一个地址了。</li>
+<li>使用一系列指定了 <strong><code>MAP_FIXED</code></strong> 标记的 mmap()调用来将文件区域映射（即重叠）进在上一步中创建的映射的不同部分中。</li>
+</ol>
+<p>尽管可以忽略第一个步骤而直接使用一系列 mmap() <strong><code>MAP_FIXED</code></strong> 操作来在应用程序选中的地址范围内创建一组连续的映射，但这种做法的可移植性与上面这种两步式做法相比就要差一些了。上面提及过，一个可移植的应用程序应该避免在固定的地址处创建新映射。上面的第一步避免了移植性问题的出现，因为这一步让内核选择了一个连续的地址范围，然后在该地址范围中创建新映射。</p>
+<h3 id="26-匿名映射">2.6 匿名映射 </h3>
+<h4 id="261-map_private-匿名映射">2.6.1 MAP_PRIVATE 匿名映射 </h4>
+<p><strong><code>MAP_PRIVATE</code></strong> 匿名映射用来分配进程私有的内存块并将其中的内容初始化为 0。在 glibc 中的 malloc() 实现使用 <strong><code>MAP_PRIVATE</code></strong> 匿名映射来分配大小大于 <strong><code>MMAP_THRESHOLD</code></strong> 字节的内存块。这样在后面将这些内存块传递给 free() 之后就能高效地释放这些块（通过 munmap()）。它还降低了重复分配和释放大内存块而导致内存分片的可能性。<strong><code>MMAP_THRESHOLD</code></strong> 在默认情况下是 128 kB，但可以通过 mallopt() 库函数来调整这个参数。</p>
+<h4 id="262-map_shared-匿名映射">2.6.2 MAP_SHARED 匿名映射 </h4>
+<p><strong><code>MAP_SHARED</code></strong> 匿名映射允许相关进程（如父进程和子进程）共享一块内存区域而无需一个对应的映射文件。</p>
+<h2 id="3map_noreserve-与过度利用交换空间">3.MAP_NORESERVE 与过度利用交换空间 </h2>
+<h3 id="31-memory-overcommit-介绍">3.1 memory overcommit 介绍 </h3>
+<p>虽然我们总是宣称每个进程都有自己独立的地址空间，但是这些地址空间都是虚拟地址空间。当进程需要内存时（例如通过 brk 分配内存），进程从内核获得的仅仅是一段虚拟地址的使用权，而不是实际的物理地址，进程并没有获得物理内存。实际的物理内存只有当进程真的去访问新获取的虚拟地址时（即开始要使用物理内存时），就会产生 "page fault (缺页异常)"，从而进入分配实际物理地址的过程，也就是分配实际的 page frame 并建立 page table。</p>
+<p>因此，看起来虚拟内存和物理内存的分配被分割开了，这是否意味着进程可以任意的申请虚拟地址空间呢？也不行，毕竟 virtual memory 需要 physical memory 做为支撑，如果分配了太多的 virtual memory，和物理内存不成比例，超过了实际可用的内存，对性能会有影响。对于这个状况，我们称之为 overcommit。有个概念需要谨记：<strong>内存申请不等于内存分配，内存只在实际用到的时候才分配</strong>。</p>
+<p>Linux 默认是允许 memory overcommit 的，所以 Linux 设计了一个 OOM killer 机制 (OOM = out-of-memory) 来处理 overcommit：挑选一个进程出来杀死，以腾出部分内存，如果还不够就继续杀。也可通过设置内核参数 <strong><code>vm.panic_on_oom</code></strong> 使得发生 OOM 时自动重启系统。这都是有风险的机制，重启有可能造成业务中断，杀死进程也有可能导致业务中断。因此 Linux 2.6 之后允许通过内核参数 <strong><code>vm.overcommit_memory</code></strong> 禁止 memory overcommit。</p>
+<h3 id="32-overcommit-相关参数介绍">3.2 overcommit 相关参数介绍 </h3>
+<h4 id="321-overcommit_memory">3.2.1 overcommit_memory </h4>
+<p><strong><code>overcommit_memory</code></strong> 这个参数就是用来控制内核对 <strong><code>overcommit</code></strong> 的策略。该参数可以设定的值如下：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code>include<span class="token operator">/</span>uapi<span class="token operator">/</span>linux<span class="token operator">/</span>mman<span class="token punctuation">.</span>h
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">OVERCOMMIT_GUESS</span>        <span class="token expression"><span class="token number">0</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">OVERCOMMIT_ALWAYS</span>        <span class="token expression"><span class="token number">1</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">OVERCOMMIT_NEVER</span>        <span class="token expression"><span class="token number">2</span></span></span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></pre><ul>
+<li><strong><code>OVERCOMMIT_GUESS</code></strong>：这是 Linux 的缺省值，它允许 overcommit，但是它会根据当前的系统可用虚拟内存来判断是否允许虚拟内存的申请。内核利用 <strong><code>__vm_enough_memory</code></strong> 判断你的内存申请是否合理，它认为不合理就会拒绝 overcommit。</li>
+<li><strong><code>OVERCOMMIT_ALWAYS</code></strong>：内核不限制 overcommit，无论进程们 commit 了多少的地址空间的申请都不会拒绝。</li>
+<li><strong><code>OVERCOMMIT_NEVER</code></strong>：always 的反面，禁止 overcommit，不允许超过系统设置的虚拟内存限制。</li>
+</ul>
+<h4 id="322-overcommit_kbytes-和-overcommit_ratio">3.2.2 overcommit_kbytes 和 overcommit_ratio </h4>
+<p><strong><code>OVERCOMMIT_ALWAYS</code></strong> 总是允许出现 overcommit 现象，但是 <strong><code>OVERCOMMIT_NEVER</code></strong> 不行，这个策略下，系统不允许出现 overcommit。判断 overcommit 的标准，可以从 <strong><code>vm_commit_limit</code></strong> 这个函数看出端倪，需要注意的是这个标准的定义的内存大小既不是物理内存的大小，也不是 free memory 的大小：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code>arch<span class="token operator">/</span>arm<span class="token operator">/</span>include<span class="token operator">/</span><span class="token keyword keyword-asm">asm</span><span class="token operator">/</span>page<span class="token punctuation">.</span>h
+<span class="token comment">/* PAGE_SHIFT determines the page size */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">PAGE_SHIFT</span>      <span class="token expression"><span class="token number">12</span></span></span>
+ 
+mm<span class="token operator">/</span>util<span class="token punctuation">.</span>c
+<span class="token comment">/*
+ * Committed memory limit enforced when OVERCOMMIT_NEVER policy is used
+ */</span>
+<span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> <span class="token function">vm_commit_limit</span><span class="token punctuation">(</span><span class="token keyword keyword-void">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> allowed<span class="token punctuation">;</span>
+    <span class="token comment">// 如果 sysctl_overcommit_kbytes，则使用 overcommit_kbytes</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>sysctl_overcommit_kbytes<span class="token punctuation">)</span>
+        <span class="token comment">// 这个操作实际上是将 kB 转换成以 page 为单位（1page = 4K），右移 2 位，相当于除以 4</span>
+        allowed <span class="token operator">=</span> sysctl_overcommit_kbytes <span class="token operator">&gt;&gt;</span> <span class="token punctuation">(</span>PAGE_SHIFT <span class="token operator">-</span> <span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-else">else</span>
+        <span class="token comment">// 否则使用 overcommit_ratio</span>
+        allowed <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>totalram_pages <span class="token operator">-</span> <span class="token function">hugetlb_total_pages</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">*</span> sysctl_overcommit_ratio <span class="token operator">/</span> <span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    allowed <span class="token operator">+=</span> total_swap_pages<span class="token punctuation">;</span>
+    <span class="token comment">// 返回判断 overcommit 的阈值，是以 page（1page=4K）为单位的</span>
+    <span class="token keyword keyword-return">return</span> allowed<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>overcommit 的标准有两个途径来设定，第一个是直接定义 <strong><code>overcommit_kbytes</code></strong>（函数中 <strong><code>sysctl_overcommit_kbytes</code></strong> 非 0），这时候标准值是 <strong><code>overcommit_kbytes</code></strong> ＋ <strong><code>total_swap_pages</code></strong>。对于 <strong><code>total_swap_pages</code></strong>，稍微讲一下页面回收（page frame reclaim）机制。</p>
+<p>内核是将一个较小的物理内存空间映射到一个较大的各个用户进程组成的虚拟地址空间之上。怎么办，最简单的方法就是“拆东墙补西墙（换入换出策略）”。但是，拆东墙（swap out）也是技术活，并不是所有进程的任何虚拟空间都可以拆。<strong>比如说程序的正文段是可以拆，因为这些内存中的内容在磁盘上有保留</strong>，当再次需要的时候（补西墙），可以从磁盘上中重新加载进来。不是所有的进程地址空间都在磁盘上有备份的，<strong>像堆、stack这些进程的虚拟地址段都没有磁盘文件与之对应的</strong>，也就是传说中的 anonymous page。对于 anonymous page，如果我们建立 swap file 或者 swap space，那么这些 anonymous page 也同样可以被交换到磁盘，并且在需要的时候 load 进内存。</p>
+<p>现在回到 <strong><code>total_swap_pages</code></strong> 这个变量，它其实就是系统可以将 anonymous page 交换到磁盘的大小，如果我们建立 32MB 的 swap file 或者 swap space，那么 <strong><code>total_swap_pages</code></strong> 就是（32M/page size），这个 page size 默认是 4K。</p>
+<p>overcommit 的第二个标准是：在 <strong><code>sysctl_overcommit_kbytes</code></strong> 设定为 0 的时候使用，<strong><code>和系统当前可用的 page frame 相关</code></strong>。不是系统中的物理内存有多少，<strong><code>totalram_pages</code></strong> 就有多少，实际上很多的 page 是不能使用的，例如 linux kernel 本身的正文段，数据段等就不能计入 <strong><code>totalram_pages</code></strong>，还有一些系统 reserve 的 page 也不算数，最终 <strong><code>totalram_pages</code></strong> <strong>实际上就是系统可以管理分配的总内存数目</strong>。<strong><code>overcommit_ratio</code></strong> 是一个百分比的数字，50 表示可以使用 50％ 的 <strong><code>totalram_pages</code></strong>，当然还有考虑 <strong><code>total_swap_pages</code></strong> 的数目，上文已经描述。</p>
+<p>同时在使用 <strong><code>overcommit_ratio</code></strong> 时，要考虑是否使用了 huge pages，传统的 4K 的 page 和 huge page 的选择也是一个平衡问题。normal page 可以灵活的管理内存段，浪费少。但是不适合大段虚拟内存段的管理（<strong>因为要建立大量的页表，TLB size 有限，因此会导致 TLB miss，影响性能</strong>），huge page 和 normal page 相反。内核可以同时支持这两种机制，不过是分开管理的。由于本节描述的 overcommit 相关参数都是和 normal page 相关的，<strong>因此在计算 allowed page 的时候要减去</strong> <strong><code>hugetlb_total_pages</code></strong>。</p>
+<p>如下就是 Linux 里面的跟 overcommit 相关的两个参数。其中 CommitLimit 就是 overcommit 的阈值，申请的内存总数超过 CommitLimit 的话就算是 overcommit。Committed_AS 表示所有进程已经申请的内存总大小（<strong>注意是已经申请的，不是已经分配的</strong>），<strong>如果 Committed_AS 超过 CommitLimit 就表示发生了 overcommit</strong>，超出越多表示 overcommit 越严重。由于这个 Linux 的 <strong><code>overcommit_memory</code></strong> 参数是 1，根据前面描述，可以知道是不限制 overcommit 的，所以出现 Committed_AS 大于 CommitLimit 情况。如果参数为 2，就绝对不会出现这种情况。同时当前 Linux 使用的是 <strong><code>overcommit_ratio</code></strong>（50%）而不是 <strong><code>overcommit_kbytes</code></strong>（为0）。</p>
+<pre data-role="codeBlock" data-info="shell{.line-numbers}" class="language-shell shell line-numbers"><code><span class="token function">grep</span> <span class="token parameter variable">-i</span> commit /proc/meminfo
+CommitLimit:    <span class="token number">12174056</span> kB
+Committed_AS:   <span class="token number">149507868</span> kB
+
+User:/proc/sys/vm <span class="token comment"># cat overcommit_memory</span>
+<span class="token function">cat</span> overcommit_memory
+<span class="token number">1</span>
+
+User:/proc/sys/vm <span class="token comment"># cat overcommit_kbytes</span>
+<span class="token function">cat</span> overcommit_kbytes
+<span class="token number">0</span>
+User:/proc/sys/vm <span class="token comment"># cat  overcommit_ratio</span>
+<span class="token function">cat</span>  overcommit_ratio
+<span class="token number">50</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><h4 id="323-admin_reserve_kbytes-和-user_reserve_kbytes">3.2.3 admin_reserve_kbytes 和 user_reserve_kbytes </h4>
+<p>这两个参数主要是防止内存管理模块把自己逼到绝境，避免出现意想不到的情况。上面我们提到拆东墙补西墙的机制，但是这种机制在某些情况下其实也不能正常的运作。例如进程A在访问自己的内存的时候，出现 page fault，通过 scan，将其他进程（B、C、D…）的“东墙”拆掉，分配给进程 A，以便让 A 可以正常运行。需要注意的是，"拆东墙"不是那么简单的事情，有可能需要进行磁盘 I/O 操作（比如：将 dirty 的 page cache flush 到磁盘）。</p>
+<p>但是，系统很快调度到了 B 进程，而 B 进程立刻需要刚刚拆除的东墙，怎么办？B 进程立刻需要分配物理内存，如果没有 free memory，这时候也只能启动 scan 过程，继续找新的东墙。在极端的情况下，很有可能把刚刚补好的西墙拆除（在操作系统中，这也被称为抖动），这时候，整个系统的性能就会显著的下降，有的时候，用户点击一个 button，很可能半天才能响应。面对这样的情况，用户当然想恢复，例如 kill 那个吞噬大量内存的进程。这个操作也需要内存（需要 fork 进程），因此，为了能够让用户顺利逃脱绝境，系统会保留 <strong><code>user_reserve_kbytes</code></strong> 的内存。</p>
+<p>对于支持多用户的 GNU/linux 系统而言，恢复系统可能需要 root 用来来完成，这时候需要保留一定的内存来支持 root 用户的登录操作，支持 root 进行 trouble shooting（使用ps，top 等命令），找到那个闹事的进程并 kill 掉它。这些为 root 用户操作而保留的 memory 定义在 <strong><code>admin_reserve_kbytes</code></strong> 参数中。<strong><code>sysctl_admin_reserve_kbytes</code></strong> 受内核参数 /proc/sys/vm/admin_reserve_kbytes 控制，同样 <strong><code>sysctl_user_reserve_kbytes</code></strong> 受内核参数 /proc/sys/vm/user_reserve_kbytes 控制。不过系统一般会给一个初始值，如下代码就是分别初始化 <strong><code>sysctl_admin_reserve_kbytes</code></strong> 和 <strong><code>sysctl_user_reserve_kbytes</code></strong> 参数，值分别为 8M 和 128M，正常这点内存大小是够用的，实际上就是最终值。如下函数解释里面也描述了。</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token comment">/*
+ * Initialise sysctl_user_reserve_kbytes.
+ *
+ * This is intended to prevent a user from starting a single memory hogging
+ * process, such that they cannot recover (kill the hog) in OVERCOMMIT_NEVER
+ * mode.
+ *
+ * The default value is min(3% of free memory, 128MB)
+ * 128MB is enough to recover with sshd/login, bash, and top/kill.
+ */</span>
+<span class="token keyword keyword-static">static</span> <span class="token keyword keyword-int">int</span> <span class="token function">init_user_reserve</span><span class="token punctuation">(</span><span class="token keyword keyword-void">void</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> free_kbytes<span class="token punctuation">;</span>
+ 
+    free_kbytes <span class="token operator">=</span> <span class="token function">global_zone_page_state</span><span class="token punctuation">(</span>NR_FREE_PAGES<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token punctuation">(</span>PAGE_SHIFT <span class="token operator">-</span> <span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 初始化时，默认设置为 128MB</span>
+    sysctl_user_reserve_kbytes <span class="token operator">=</span> <span class="token function">min</span><span class="token punctuation">(</span>free_kbytes <span class="token operator">/</span> <span class="token number">32</span><span class="token punctuation">,</span> <span class="token number">1UL</span> <span class="token operator">&lt;&lt;</span> <span class="token number">17</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token function">subsys_initcall</span><span class="token punctuation">(</span>init_user_reserve<span class="token punctuation">)</span><span class="token punctuation">;</span>
+ 
+<span class="token comment">/*
+ * Initialise sysctl_admin_reserve_kbytes.
+ *
+ * The purpose of sysctl_admin_reserve_kbytes is to allow the sys admin
+ * to log in and kill a memory hogging process.
+ *
+ * Systems with more than 256MB will reserve 8MB, enough to recover
+ * with sshd, bash, and top in OVERCOMMIT_GUESS. Smaller systems will
+ * only reserve 3% of free pages by default.
+ */</span>
+<span class="token keyword keyword-static">static</span> <span class="token keyword keyword-int">int</span> <span class="token function">init_admin_reserve</span><span class="token punctuation">(</span><span class="token keyword keyword-void">void</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> free_kbytes<span class="token punctuation">;</span>
+ 
+    free_kbytes <span class="token operator">=</span> <span class="token function">global_zone_page_state</span><span class="token punctuation">(</span>NR_FREE_PAGES<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token punctuation">(</span>PAGE_SHIFT <span class="token operator">-</span> <span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 初始化时，默认设置为 8MB</span>
+    sysctl_admin_reserve_kbytes <span class="token operator">=</span> <span class="token function">min</span><span class="token punctuation">(</span>free_kbytes <span class="token operator">/</span> <span class="token number">32</span><span class="token punctuation">,</span> <span class="token number">1UL</span> <span class="token operator">&lt;&lt;</span> <span class="token number">13</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token function">subsys_initcall</span><span class="token punctuation">(</span>init_admin_reserve<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>在 <strong><code>__vm_enough_memory</code></strong> 函数对应文件下，也再次设置了 <strong><code>sysctl_admin_reserve_kbytes</code></strong> 和 <strong><code>sysctl_user_reserve_kbytes</code></strong> 参数：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token comment">// mm/util.c</span>
+<span class="token keyword keyword-int">int</span> sysctl_overcommit_memory __read_mostly <span class="token operator">=</span> OVERCOMMIT_GUESS<span class="token punctuation">;</span>
+<span class="token keyword keyword-int">int</span> sysctl_overcommit_ratio __read_mostly <span class="token operator">=</span> <span class="token number">50</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> sysctl_overcommit_kbytes __read_mostly<span class="token punctuation">;</span>
+<span class="token keyword keyword-int">int</span> sysctl_max_map_count __read_mostly <span class="token operator">=</span> DEFAULT_MAX_MAP_COUNT<span class="token punctuation">;</span>
+<span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> sysctl_user_reserve_kbytes __read_mostly <span class="token operator">=</span> <span class="token number">1UL</span> <span class="token operator">&lt;&lt;</span> <span class="token number">17</span><span class="token punctuation">;</span> <span class="token comment">/* 128MB */</span>
+<span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> sysctl_admin_reserve_kbytes __read_mostly <span class="token operator">=</span> <span class="token number">1UL</span> <span class="token operator">&lt;&lt;</span> <span class="token number">13</span><span class="token punctuation">;</span> <span class="token comment">/* 8MB */</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><h3 id="33-map_noreserve-详解">3.3 MAP_NORESERVE 详解 </h3>
+<p>一些应用程序<strong>会创建大（通常是私有匿名的）映射，但只使用映射区域中的一小部分</strong>。如特定的科学应用程序会分配非常大的数组，但只使用其中一些散落在数组各处的元素（所谓的稀疏数组）。</p>
+<p>如果内核总是为此类映射分配（或预留）足够的交换空间，那么很多交换空间可能会被浪费。相反，内核可以只在需要用到映射分页的时候（即当应用程序访问分页时）为它们预留交换空间。这种方法被称为懒交换预留（lazy swap reservation）。</p>
+<p>所谓为此类映射分配（或预留）足够的交换空间，其实就是程序使用 mmap 分配了 100MB 的空间（私有可写映射或者共享匿名映射），<strong>那么交换空间中需要预留 100MB 的空间</strong>，但是整个映射空间中可能只有很少的一部分被用到，因此所谓的过度利用交换空间/懒交换预留/MAP_NORESERVE 的意思其实就是，当映射中某个分页真正被使用到时，才在交换空间中预留相应大小的空间。</p>
+<p>内核如何处理交换空间的预留是由调用 <strong><code>mmap()</code></strong> 时是否使用了 <strong><code>MAP_NORESERVE</code></strong> 标记以及影响系统层面的交换空间过度利用操作的 /proc 接口来控制的。<strong><code>MAP_NORESERVE</code></strong> 设置为是，那么就说明不提前预留交换空间，使用懒交换预留策略，允许过度利用内存。</p>
+<div align="center">
+    <img src="高级IO函数_static/13.png" width="600">
+</div>
+<blockquote>
+<p><strong><code>#define OVERCOMMIT_GUESS  0</code></strong><br>
+<strong><code>#define OVERCOMMIT_ALWAYS  1</code></strong><br>
+<strong><code>#define OVERCOMMIT_NEVER  2</code></strong></p>
+</blockquote>
+<p>Linux 特有的 /proc/sys/vm/overcommit_memory 文件包含了一个整数值，它控制着内核对交换空间过度利用的处理。在 2.6 之前的 Linux 上这个文件中的整数只能取两个值：0 表示拒绝明显的过度利用（遵从 <strong><code>MAP_NORESERVE</code></strong> 标记的使用），大于 0 表示在所有情况下都允许过度利用。</p>
+<p>从上面表格可以看出，当 <strong><code>overcommit_memory</code></strong> 值为 0 时，采用启发式算法，根据 <strong><code>MAP_NORESERVE</code></strong> 的值来判断是否允许过度利用；当 <strong><code>overcommit_memory</code></strong> 值为 1 或者 2 时，直接全部允许过度利用，或者拒绝的过度利用。拒绝过度利用意味着大小不超过当前可用空闲内存的映射是被允许的。</p>
+<p>从 Linux 2.6 起，1 的含义与之前的内核中正数的含义一样，但 2（或更大）则会导致使用采用严格的过度利用。在这种情况下，内核会在所有 <strong><code>mmap()</code></strong> 分配上执行严格的记账并将系统中此类分配的总量控制在小于或等于：</p>
+<pre data-role="codeBlock" data-info="shell" class="language-shell shell"><code><span class="token punctuation">[</span>swap size<span class="token punctuation">]</span> + <span class="token punctuation">[</span>RAM size<span class="token punctuation">]</span> * overcommit_ratio / <span class="token number">100</span>
+</code></pre><p>注意过度利用监控只适用于下面这些映射：</p>
+<ul>
+<li>私有可写映射（包括文件和匿名映射），这种映射的交换"开销"等于所有使用该映射的进程为该映射所分配的空间总和。私有可写映射中发生的变更不会被写回，所以映射区域中发生的变更（文件、匿名映射）需要保存到交换空间中。</li>
+<li>共享匿名映射，这种映射的交换"开销"等于映射的大小（因为所有进程共享该映射）。</li>
+</ul>
+<p>为只读私有映射（包括文件和匿名映射）预留交换空间是没有必要的，因为映射中的内容是不可变更的，从而无需使用交换空间。共享文件映射也不需要使用交换空间，因为映射文件本身担当了映射的交换空间，物理内存空间不够时，直接将对应物理内存写回到磁盘文件中。当一个子进程在 <strong><code>fork()</code></strong> 调用中继承了一个映射时，它将会继承该映射的 <strong><code>MAP_NORESERVE</code></strong> 设置。</p>
+<p>上面提及过当使用懒交换预留时，如果应用程序试图使用整个映射的话就会导致内存被耗尽。在这种情况下，内核会通过杀死进程来缓解内存消耗情况。</p>
+<p>内核中用来在内存被耗尽时选择杀死哪个进程的代码通常被称为 <strong>out-of-memory (OOM)</strong> 杀手。OOM 杀手会尝试选择杀死能够缓解内存消耗情况的最佳进程，这里的"最佳"是由一组因素来确定的。如一个进程消耗的内存越多，它就越可能成为 OOM 杀手的候选目标。其他能提高一个进程被选中的可能性的因素包括进程是否创建了很多子进程以及进程是否拥有一个较低的 nice 值（即大于 0 的值）。内核一般不会杀死下列进程。</p>
+<ul>
+<li>特权进程，因为它们可能正在执行重要的任务;</li>
+<li>正在访问裸设备的进程，因为杀死它们可能会导致设备处理一个不可用的状态;</li>
+<li>已经运行了很长时间或已经消耗了大量 CPU 的进程，因为杀死它们可能会导致丢失很多"工作";</li>
+</ul>
+<h2 id="4mmap-函数源码">4.mmap 函数源码 </h2>
+<p><strong><code>mmap</code></strong> 分为文件映射和匿名映射：</p>
+<ul>
+<li>文件映射：将进程的虚拟内存区域映射到文件。即读取那些内存区域将导致文件被读取，这是默认的映射类型。</li>
+<li>匿名映射：会映射该进程的虚拟内存中没有任何文件支持的区域，内容初始化为零。系统都通过 <strong><code>MAP_ANONYMOUS</code></strong> 和 <strong><code>MAP_ANON</code></strong> 标志实现了匿名映射，但它并不是 <strong><code>POSIX</code></strong> 标准的一部分。</li>
+</ul>
+<p>如果设置 <strong><code>MAP_SHARED</code></strong> 标志，则将在 <strong><code>fork()</code></strong> 系统调用中保留该映射。即所有相关（及其子进程）进程中，一个进程对映射区域的写操作，对相关其他进程立即可见。说成人话：不同进程映射了同一块内存，所有进程对这块区域具有可见性。</p>
+<p><strong>1) task_struct 结构体</strong></p>
+<p><strong><code>task_struct</code></strong> 这个结构体，它被叫做进程描述符，内部成员包含了很多与进程相关的信息，表示一个进程：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token keyword keyword-struct">struct</span> <span class="token class-name">task_struct</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 进程状态</span>
+    <span class="token comment">// -1 不可运行，0 可运行，&gt;0 已停止</span>
+    <span class="token keyword keyword-volatile">volatile</span> <span class="token keyword keyword-long">long</span> state<span class="token punctuation">;</span> 
+    <span class="token keyword keyword-int">int</span> exit_state<span class="token punctuation">;</span>
+
+    <span class="token comment">// 进程地址空间 </span>
+    <span class="token comment">// 进程所拥有的内存空间描述符，对于内核线程的 mm 为 NULL</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>mm<span class="token punctuation">;</span> 
+    <span class="token comment">// 指进程运行时所使用的进程描述符</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>active_mm<span class="token punctuation">;</span> 
+
+    <span class="token comment">// 进程标识符（PID） </span>
+    <span class="token class-name">pid_t</span> pid<span class="token punctuation">;</span>
+    <span class="token class-name">pid_t</span> tgid<span class="token punctuation">;</span>
+
+    <span class="token comment">// 指定调度程序行为</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-int">int</span> flags<span class="token punctuation">;</span>    
+    <span class="token comment">// 表示进程亲属关系的成员 </span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">task_struct</span> __rcu <span class="token operator">*</span>real_parent<span class="token punctuation">;</span>
+
+    <span class="token comment">// 进程调度 </span>
+    <span class="token keyword keyword-int">int</span> prio<span class="token punctuation">,</span> static_prio<span class="token punctuation">,</span> normal_prio<span class="token punctuation">;</span>
+    <span class="token comment">// 表示进程的调度策略 </span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-int">int</span> policy<span class="token punctuation">;</span> 
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p><strong>2) mm_struct</strong></p>
+<p>内存描述符的结构体———— <strong><code>mm_struct</code></strong>，抽象的来描述 Linux 下进程的地址空间的所有的信息，一个 <strong><code>task_struct</code></strong> 只有一个 <strong><code>mm_struct</code></strong>。</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 指向线性区对象的链表头</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span> mmap<span class="token punctuation">;</span>       <span class="token comment">/* list of VMAs */</span>
+    <span class="token comment">// 指向线性区对象的红黑树</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_root</span> mm_rb<span class="token punctuation">;</span>
+    <span class="token comment">// vma 缓存存放最近找到的 vma（数组结构）</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span> mmap_cache<span class="token punctuation">;</span> 
+    <span class="token comment">// 标识第一个分配文件内存映射的线性地址</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> mmap_base<span class="token punctuation">;</span>    <span class="token comment">/* base of mmap area */</span>
+    <span class="token comment">// 用来在进程地址空间中搜索有效的进程地址空间的函数</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> <span class="token punctuation">(</span><span class="token operator">*</span>get_unmapped_area<span class="token punctuation">)</span> <span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span>filp<span class="token punctuation">,</span>
+                <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> len<span class="token punctuation">,</span>
+                <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> pgoff<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> flags<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  
+    <span class="token comment">// 指向页表的目录</span>
+    <span class="token class-name">pgd_t</span> <span class="token operator">*</span> pgd<span class="token punctuation">;</span>
+  
+    <span class="token comment">// 进程地址空间的页数</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> total_vm<span class="token punctuation">;</span>    
+    <span class="token comment">// 锁住的页数，不能换出    </span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> locked_vm<span class="token punctuation">;</span>  
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p><strong>3) vm_area_struct</strong></p>
+<p>进程虚拟内存描述符，Linux 内核使用 <strong><code>vm_area_struct</code></strong> 结构来表示一个独立的虚拟内存区域。<strong><code>vm_area_struct</code></strong> 结构中包含区域起始和终止地址以及其他相关信息，同时也包含一个 <strong><code>vm_ops</code></strong> 指针，其内部可引出所有针对这个区域可以使用的系统调用函数。这样，进程对某一虚拟内存区域的任何操作需要用要的信息，都可以从 <strong><code>vm_area_struct</code></strong> 中获得。<strong>mmap 函数就是要创建一个新的 <strong><code>vm_area_struct</code></strong> 结构，并将其与文件的物理磁盘地址相连</strong>。</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token comment">// 该结构定义了一个内存 VMA 内存区域。</span>
+<span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 所属的内存描述符</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>vm_mm<span class="token punctuation">;</span> 
+    <span class="token comment">// vma 的起始地址</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_start<span class="token punctuation">;</span>        
+    <span class="token comment">// vma 的结束地址</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_end<span class="token punctuation">;</span>     
+
+    <span class="token comment">// 该 vma 的在一个进程的 vma 链表中的前驱 vma 和后驱 vma 指针，链表中的 vma 都是按地址来排序的</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span>vm_next<span class="token punctuation">,</span> <span class="token operator">*</span>vm_prev<span class="token punctuation">;</span>
+
+    <span class="token comment">// 红黑树 rb(red black) 中对应的节点（红黑树的引入就是为了解决当查找数量 vma 非常多时效率低下的问题，在红黑树中，搜索元素，插入，删除等操作，都会变得非常高效）</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_node</span> vm_rb<span class="token punctuation">;</span>      
+  
+    <span class="token comment">// vma 的访问权限</span>
+    <span class="token class-name">pgprot_t</span> vm_page_prot<span class="token punctuation">;</span>    
+    <span class="token comment">// 标志，请参见 mm.h</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_flags<span class="token punctuation">;</span>    
+    <span class="token comment">// 映射文件的偏移量，以 PAGE_SIZE 为单位</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> vm_pgoff<span class="token punctuation">;</span>   
+    <span class="token comment">// 我们映射到的文件（可以为 NULL）     </span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span>vm_file<span class="token punctuation">;</span>    
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p><strong>4) task_struct、mm_struct 和 vm_area_struct 的关系</strong></p>
+<div align="center">
+    <img src="高级IO函数_static/11.png" width="650">
+</div>
+<p>一个进程 <strong><code>task_struct</code></strong> 的虚拟地址空间主要由两个数据结来描述。一个是最高层次的：<strong><code>mm_struct</code></strong>，一个是较高层次的：<strong><code>vm_area_structs</code></strong>。最高层次的 <strong><code>mm_struct</code></strong> 结构描述了一个进程的整个虚拟地址空间。较高层次的结构 <strong><code>vm_area_struct</code></strong> 描述了虚拟地址空间的一个区间（简称虚拟区）。<strong>每个进程只有一个 <strong><code>mm_struct</code></strong> 结构，在每个进程的 <strong><code>task_struct</code></strong> 结构中，有一个指向该进程的结构</strong>。可以说，<strong><code>mm_struct</code></strong> 结构是对整个用户空间的描述。</p>
+<p>Linux 内存使用红黑树和链表的作用是什么？红黑树是方便遍历查找符合要求的结点（比如 <strong><code>mmap</code></strong> 的时候查找 <strong><code>vma</code></strong>），链表是顺序结构，当需要顺序遍历时起到作用（比如 <strong><code>mm_take_all_locks()</code></strong>）。</p>
+<p><strong>5) mmap 函数</strong></p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token keyword keyword-void">void</span> <span class="token operator">*</span><span class="token function">mmap</span><span class="token punctuation">(</span><span class="token keyword keyword-void">void</span> <span class="token operator">*</span>start<span class="token punctuation">,</span> <span class="token class-name">size_t</span> length<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span> prot<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span> flags<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span> fd<span class="token punctuation">,</span> <span class="token class-name">off_t</span> offset<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span></span></pre><p>参数说明：</p>
+<ul>
+<li>start：指向欲映射的内存起始地址，通常设为 NULL，代表让系统自动选定地址，映射成功后返回该地址。</li>
+<li>length：映射区的大小</li>
+<li>prot：映射区域的保护方式
+<ul>
+<li><strong><code>PROT_EXEC</code></strong> 映射区域可被执行</li>
+<li><strong><code>PROT_READ</code></strong> 映射区域可被读取</li>
+<li><strong><code>PROT_WRITE</code></strong> 映射区域可被写入</li>
+<li><strong><code>PROT_NONE</code></strong> 映射区域不能存取</li>
+</ul>
+</li>
+<li>flags：影响映射区域的各种特性
+<ul>
+<li><strong><code>MAP_SHARED</code></strong> 对映射区域的写入数据会复制回文件内，而且允许其他映射该文件的进程共享。</li>
+<li><strong><code>MAP_PRIVATE</code></strong> 对映射区域的写入操作会产生一个映射文件的复制（写时复制），对此区域作的任何修改都不会写回原来的文件内容。</li>
+<li><strong><code>MAP_ANONYMOUS</code></strong> 匿名映射，映射区不与任何文件关联</li>
+</ul>
+</li>
+<li>fd：如果 <strong><code>MAP_ANONYMOUS</code></strong> 被设定，为了兼容问题，其值应为 -1</li>
+<li>offset：文件映射的偏移量，通常设置为 0，代表从文件最前方开始对应，<strong>offset 必须是分页大小的整数倍</strong></li>
+</ul>
+<p>返回值：若映射成功则返回映射区的内存起始地址，否则返回 <strong><code>MAP_FAILED</code></strong>(－1)，错误原因存于 <strong><code>errno</code></strong> 中。</p>
+<p>问：为什么映射区的大小必须是物理页的整数倍？物理内存的单位是页，而进程虚拟地址空间和内存的映射也是以页为单位，32 位系统中一个物理页大小 (page_size) 通常是 4K = 4096</p>
+<p><strong>6) mmap 函数的调用过程</strong></p>
+<p><strong><code>mmap</code></strong> 内存映射的实现过程，总的来说可以分为三个阶段：</p>
+<ul>
+<li>进程在用户空间调用库函数 mmap()</li>
+<li>在当前进程的虚拟地址空间中，寻找一段空闲的满足要求的连续的虚拟地址</li>
+<li>为此虚拟区分配一个 <strong><code>vm_area_struct</code></strong> 结构，接着对这个结构的各个域进行了初始化，比如设置 <strong><code>vma-&gt;vm_file</code></strong> 以及根据文件系统类型，将 <strong><code>vma-&gt;vm_ops</code></strong> 设为对应的 <strong><code>file_operations</code></strong></li>
+<li>将新建的虚拟区结构 <strong><code>vm_area_struct</code></strong> 插入进程的虚拟地址区域链表或树中</li>
+</ul>
+<p>我们从一个简单的 mmap demo 开始入手，我们先 open 一个 mapTest.txt，获得 fd，然后在 mmap() 中传入 fd。</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token keyword keyword-int">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword keyword-int">int</span> argc<span class="token punctuation">,</span> <span class="token keyword keyword-const">const</span> <span class="token keyword keyword-char">char</span><span class="token operator">*</span> argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 打开一个文件</span>
+    <span class="token keyword keyword-int">int</span> fd <span class="token operator">=</span> <span class="token function">open</span><span class="token punctuation">(</span><span class="token string">"mapTest.txt"</span><span class="token punctuation">,</span> O_RDWR<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-int">int</span> len <span class="token operator">=</span> <span class="token function">lseek</span><span class="token punctuation">(</span>fd<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token constant">SEEK_END</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 创建内存映射区</span>
+    <span class="token keyword keyword-void">void</span> <span class="token operator">*</span>ptr <span class="token operator">=</span> <span class="token function">mmap</span><span class="token punctuation">(</span><span class="token constant">NULL</span><span class="token punctuation">,</span> len<span class="token punctuation">,</span> PROT_READ <span class="token operator">|</span> PROT_WRITE<span class="token punctuation">,</span> MAP_SHARED<span class="token punctuation">,</span> fd<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>ptr <span class="token operator">==</span> MAP_FAILED<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token function">perror</span><span class="token punctuation">(</span><span class="token string">"error"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">exit</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"%s"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token keyword keyword-char">char</span><span class="token operator">*</span><span class="token punctuation">)</span>ptr<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">// 释放内存映射区</span>
+    <span class="token function">munmap</span><span class="token punctuation">(</span>ptr<span class="token punctuation">,</span> len<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">close</span><span class="token punctuation">(</span>fd<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p><strong><code>mmap()</code></strong> 对应系统调用哪个函数呢？查看系统调用表，发现是 9 号系统调用（进入内核态）<strong><code>sys_mmap()</code></strong> 就是 <strong><code>mmap()</code></strong> 的内核实现。</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token comment">// syscall.tbl</span>
+<span class="token number">9</span>    common    mmap    sys_mmap
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></pre><pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">offset_in_page</span><span class="token expression"><span class="token punctuation">(</span>p<span class="token punctuation">)</span>  <span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span><span class="token punctuation">)</span><span class="token punctuation">(</span>p<span class="token punctuation">)</span> <span class="token operator">&amp;</span> <span class="token operator">~</span>PAGE_MASK<span class="token punctuation">)</span></span></span>
+
+<span class="token comment">// sys_ia64.c</span>
+asmlinkage <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span>
+<span class="token function">sys_mmap</span> <span class="token punctuation">(</span><span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> len<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span> prot<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span> flags<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span> fd<span class="token punctuation">,</span> <span class="token keyword keyword-long">long</span> off<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 检查偏移量 off 是否页面对齐</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">offset_in_page</span><span class="token punctuation">(</span>off<span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">0</span><span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EINVAL<span class="token punctuation">;</span>
+    <span class="token comment">// ksys_mmap_pgoff</span>
+    addr <span class="token operator">=</span> <span class="token function">ksys_mmap_pgoff</span><span class="token punctuation">(</span>addr<span class="token punctuation">,</span> len<span class="token punctuation">,</span> prot<span class="token punctuation">,</span> flags<span class="token punctuation">,</span> fd<span class="token punctuation">,</span> off <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">IS_ERR</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword keyword-void">void</span> <span class="token operator">*</span><span class="token punctuation">)</span> addr<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token function">force_successful_syscall_return</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> addr<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> <span class="token function">ksys_mmap_pgoff</span><span class="token punctuation">(</span><span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> len<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> prot<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> flags<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> fd<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> pgoff<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  
+  <span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span>file <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+  
+  <span class="token comment">// 省略代码...</span>
+
+  retval <span class="token operator">=</span> <span class="token function">vm_mmap_pgoff</span><span class="token punctuation">(</span>file<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> len<span class="token punctuation">,</span> prot<span class="token punctuation">,</span> flags<span class="token punctuation">,</span> pgoff<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> <span class="token function">vm_mmap_pgoff</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span>file<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">,</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> len<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> prot<span class="token punctuation">,</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> flag<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> pgoff<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> ret<span class="token punctuation">;</span>
+
+    <span class="token comment">// 省略代码...</span>
+
+    ret <span class="token operator">=</span> <span class="token function">do_mmap_pgoff</span><span class="token punctuation">(</span>file<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> len<span class="token punctuation">,</span> prot<span class="token punctuation">,</span> flag<span class="token punctuation">,</span> pgoff<span class="token punctuation">,</span> <span class="token operator">&amp;</span>populate<span class="token punctuation">,</span> <span class="token operator">&amp;</span>uf<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>在下面的 <strong><code>do_mmap_pgoff</code></strong> 函数中需要用到 <strong><code>round_hint_to_min</code></strong> 函数，这个函数将 <strong><code>hint</code></strong> 地址设置为大于 <strong><code>mmap_min_addr</code></strong> 并且为 <strong><code>PAGE_SIZE</code></strong> 整数倍的最小地址。我们首先看看 Red Hat 对于 <strong><code>mmap_min_addr</code></strong> 地址作用的解释（为了防止 NULL pointer dereference）：</p>
+<blockquote>
+<p>NULL pointer dereference flaws in the Linux kernel can often be abused by a local, unprivileged user to gain root privileges by <strong><em>mapping attacker-controlled data to low memory pages</em></strong>. In the Linux kernel version 2.6.23, the /proc/sys/vm/mmap_min_addr tunable was introduced to prevent unprivileged users from creating new memory mappings below the minimum address.</p>
+</blockquote>
+<p>在默认的 x86 Linux 上，小于 0x10000 的虚地址是没有办法 mmap 的。而 x86 Linux 不让用户 <strong><code>mmap</code></strong> 低于 0x10000 的虚地址也是有它的道理的。</p>
+<p>有时候因为某些设计缺陷，程序使用了错误的指针，访问了错误的内存。如果指针指向的地址在进程中没有被映射，那么执行时会产生 page fault 异常，操作系统会给进程发送 <strong><code>SIGSEGV</code></strong> 信号。如果程序没有注册 <strong><code>SIGSEGV</code></strong> 信号处理函数，接收到这个信号就会退出，并报告我们熟悉的 'Segmentation Fault'。</p>
+<p>但是，<strong>如果指针指向的地址在进程中被映射了，错误的内存访问就会悄无声息地发生，给 debug 带来了很大的难度</strong>。在设计进程的虚拟空间的时候，x86 Linux 不让用户 mmap 低于 0x10000 的虚地址空间，那么这段空间永远不会被映射，所有非法访问这段内存的行为都会被发现，为程序 debug 带来了一些便利。其实，在不同的 Linux 系统下，默认可以 mmap 的最低地址是不同的。比如 x86 上是 0x10000，mips 上是 0x4000，arm 上是 0x1000。</p>
+<p>下面这个小程序可以输出当前系统下可以 mmap 的最低地址：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;sys/mman.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;stdio.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;unistd.h&gt;</span></span>
+
+<span class="token keyword keyword-int">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+    <span class="token keyword keyword-int">int</span> i<span class="token punctuation">;</span>
+    <span class="token keyword keyword-void">void</span> <span class="token operator">*</span>start <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+    <span class="token class-name">size_t</span> page_size <span class="token operator">=</span> <span class="token function">getpagesize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-while">while</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+        <span class="token keyword keyword-void">void</span> <span class="token operator">*</span>addr <span class="token operator">=</span> <span class="token function">mmap</span><span class="token punctuation">(</span>start<span class="token punctuation">,</span> page_size<span class="token punctuation">,</span> PROT_READ<span class="token operator">|</span>PROT_WRITE<span class="token punctuation">,</span> \
+        MAP_PRIVATE<span class="token operator">|</span>MAP_FIXED<span class="token operator">|</span>MAP_ANONYMOUS<span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword keyword-if">if</span><span class="token punctuation">(</span>addr <span class="token operator">!=</span> MAP_FAILED<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"lowest mapable address: %p\n"</span><span class="token punctuation">,</span> start<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword keyword-break">break</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        start <span class="token operator">+=</span> page_size<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>下面继续看 <strong><code>do_mmap_pgoff</code></strong> 函数的内容：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token comment">/* align addr on a size boundary - adjust address up/down if needed */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">_ALIGN_UP</span><span class="token expression"><span class="token punctuation">(</span>addr<span class="token punctuation">,</span> size<span class="token punctuation">)</span>    <span class="token punctuation">(</span><span class="token punctuation">(</span>addr<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token punctuation">(</span>size <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">&amp;</span> <span class="token punctuation">(</span><span class="token operator">~</span><span class="token punctuation">(</span>size <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span></span></span>
+
+<span class="token comment">/* align addr on a size boundary - adjust address up if needed */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">_ALIGN</span><span class="token expression"><span class="token punctuation">(</span>addr<span class="token punctuation">,</span> size<span class="token punctuation">)</span>     <span class="token function">_ALIGN_UP</span><span class="token punctuation">(</span>addr<span class="token punctuation">,</span>size<span class="token punctuation">)</span></span></span>
+
+<span class="token comment">/* to align the pointer to the (next) page boundary */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">PAGE_ALIGN</span><span class="token expression"><span class="token punctuation">(</span>addr<span class="token punctuation">)</span>    <span class="token function">_ALIGN</span><span class="token punctuation">(</span>addr<span class="token punctuation">,</span> PAGE_SIZE<span class="token punctuation">)</span></span></span>
+
+<span class="token keyword keyword-static">static</span> <span class="token keyword keyword-inline">inline</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> <span class="token function">round_hint_to_min</span><span class="token punctuation">(</span><span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> hint<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token comment">// hint &amp;= PAGE_MASK 表示将 hint 变为 PAGE 大小的整数倍并且修改后的 hint &lt;= 修改前的 hint</span>
+    <span class="token comment">// 比如一个页面的大小为 64B，而现在地址大小为 286，即 </span>
+    <span class="token comment">// PAGE_SHIFT = 6</span>
+    <span class="token comment">// PAGE_SIZE = 1 &lt;&lt; 6 = 64</span>
+    <span class="token comment">// PAGE_MASK = ~(PAGE_SIZE - 1) = ~(011 1111) = 100 0000</span>
+    <span class="token comment">// hint = 286 = 1 0001 1110 </span>
+    <span class="token comment">// hint &amp; PAGE_MASK = 1 0000 0000 = 256</span>
+    <span class="token comment">// 同理，当 hint 为 336 时，hint &amp; PAGE_MASK 为 320，即均为 64 的整数倍</span>
+    hint <span class="token operator">&amp;=</span> PAGE_MASK<span class="token punctuation">;</span>
+    <span class="token comment">// hint 地址的值不能小于 mmap_min_addr，这是为了防止 NULL pointer dereference</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword keyword-void">void</span> <span class="token operator">*</span><span class="token punctuation">)</span>hint <span class="token operator">!=</span> <span class="token constant">NULL</span><span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span>
+        <span class="token punctuation">(</span>hint <span class="token operator">&lt;</span> mmap_min_addr<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token comment">// (mmap_min_addr + PAGE_SIZE - 1) &amp; PAGE_MASK</span>
+        <span class="token comment">// 即大于 mmap_min_addr 并且是 PAGE_SIZE 整数倍的最小地址</span>
+        <span class="token keyword keyword-return">return</span> <span class="token function">PAGE_ALIGN</span><span class="token punctuation">(</span>mmap_min_addr<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> hint<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> <span class="token function">do_mmap_pgoff</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span>file<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">,</span>
+            <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> len<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> prot<span class="token punctuation">,</span>
+            <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> flags<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> pgoff<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span> mm <span class="token operator">=</span> current<span class="token operator">-&gt;</span>mm<span class="token punctuation">;</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">inode</span> <span class="token operator">*</span>inode<span class="token punctuation">;</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-int">int</span> vm_flags<span class="token punctuation">;</span>
+    <span class="token keyword keyword-int">int</span> error<span class="token punctuation">;</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> reqprot <span class="token operator">=</span> prot<span class="token punctuation">;</span>
+
+    <span class="token comment">/*
+     * Does the application expect PROT_READ to imply PROT_EXEC?
+     *
+     * (the exception is when the underlying filesystem is noexec mounted, in which case we dont add PROT_EXEC.)
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>prot <span class="token operator">&amp;</span> PROT_READ<span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token punctuation">(</span>current<span class="token operator">-&gt;</span>personality <span class="token operator">&amp;</span> READ_IMPLIES_EXEC<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token punctuation">(</span>file <span class="token operator">&amp;&amp;</span> <span class="token function">path_noexec</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>file<span class="token operator">-&gt;</span>f_path<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+            prot <span class="token operator">|=</span> PROT_EXEC<span class="token punctuation">;</span>
+
+    <span class="token comment">/*
+     * 函数对传入的参数进行一系列检查，假如任一参数出错，都会返回一个 errno
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>len<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EINVAL<span class="token punctuation">;</span>
+    
+    <span class="token comment">/* 
+     * MAP_FIXED 参数指定内存段必须位于 start 参数指定的地址处，start 必须是内存页面大小（4K）的整数倍，
+     * 假如没有设置 MAP_FIXED 标志，且 addr 小于 mmap_min_addr，因为可以修改 addr，所以就需要将 addr 设为 mmap_min_addr 的页对齐后的地址，
+     * 即 addr 为大于 mmap_min_addr 的并且 PAGE_SIZE 对齐的最小地址
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> MAP_FIXED<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        addr <span class="token operator">=</span> <span class="token function">round_hint_to_min</span><span class="token punctuation">(</span>addr<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/* Careful about overflows.. */</span>
+    <span class="token comment">/* 
+     * (len + PAGE_SIZE - 1) &amp; PAGE_MASK
+     * 将 len 调整为大于原有值同时 PAGE_SIZE 对齐的大小
+     */</span>
+    len <span class="token operator">=</span> <span class="token function">PAGE_ALIGN</span><span class="token punctuation">(</span>len<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>len<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>ENOMEM<span class="token punctuation">;</span>
+
+    <span class="token comment">/* offset overflow? */</span>
+    <span class="token comment">// 注意 offset 是以页为单位的，len &gt;&gt; PAGE_SHIFT 表示 len（上面对齐以后）包含多少页</span>
+    <span class="token comment">// 如果 pgoff + (len &gt;&gt; PAGE_SHIFT) &lt; pgoff 说明 pgoff 发生了溢出</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>pgoff <span class="token operator">+</span> <span class="token punctuation">(</span>len <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">&lt;</span> pgoff<span class="token punctuation">)</span>
+               <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EOVERFLOW<span class="token punctuation">;</span>
+
+    <span class="token comment">/* Too many mappings? */</span>
+    <span class="token comment">/* 判断该进程的地址空间的虚拟区间数量是否超过了限制 */</span>
+    <span class="token comment">/*
+     * sysctl_max_map_count 参数的解释如下所示：
+     * 
+     * This file contains the maximum number of memory map areas a process may have (VMA). Memory map areas are used as a side-effect of 
+     * calling malloc, directly by mmap and mprotect, and also when loading shared libraries.
+     *  
+     * While most applications need less than a thousand maps, certain programs, particularly malloc debuggers, may consume lots of 
+     * them, e.g., up to one or two maps per allocation.
+     *
+     * The default value is 65536.
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>mm<span class="token operator">-&gt;</span>map_count <span class="token operator">&gt;</span> sysctl_max_map_count<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>ENOMEM<span class="token punctuation">;</span>
+
+    <span class="token comment">/* 
+     * Obtain the address to map to. we verify (or select) it and ensure that it represents a valid section of the address space.
+     * get_unmapped_area 从当前进程的用户空间获取一个未被映射区间的起始地址 
+     */</span>
+    addr <span class="token operator">=</span> <span class="token function">get_unmapped_area</span><span class="token punctuation">(</span>file<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> len<span class="token punctuation">,</span> pgoff<span class="token punctuation">,</span> flags<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 如果地址不是是页对齐，addr 值可能是错误值(大概类似 -EINVAL 这种?)，然后将错误结果返回给用户了</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>addr <span class="token operator">&amp;</span> <span class="token operator">~</span>PAGE_MASK<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> addr<span class="token punctuation">;</span>
+
+    <span class="token comment">/* 
+     * Do simple checking here so the lower-level routines won't have to. we assume access permissions have 
+     * been handled by the open of the memory object, so we don't do any here.
+     * 以下是检查 flag 的参数设置，将 mmap 的 flags 和 prot 标志位转换为 vm_area_struct 的 flag
+     * mmap 的 prot 标志为：PROT_READ、PROT_WRITE、PROT_EXEC
+     * mmap 的 flags 值为：MAP_SHARED、MAP_PRIVATE、MAP_ANONYMOUS
+     * vm_area_struct 的 vm_flags 为：VM_READ、VM_WRITE、VM_EXEC、VM_SHARED、VM_MAYREAD（The VM_READ flag can be set）、
+     * VM_MAYWRITE（The VM_WRITE flag can be set）、VM_MAYEXEC（The VM_EXEC flag can be set）
+     */</span>
+    vm_flags <span class="token operator">=</span> <span class="token function">calc_vm_prot_bits</span><span class="token punctuation">(</span>prot<span class="token punctuation">)</span> <span class="token operator">|</span> <span class="token function">calc_vm_flag_bits</span><span class="token punctuation">(</span>flags<span class="token punctuation">)</span> <span class="token operator">|</span> mm<span class="token operator">-&gt;</span>def_flags <span class="token operator">|</span> VM_MAYREAD <span class="token operator">|</span> VM_MAYWRITE <span class="token operator">|</span> VM_MAYEXEC<span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> MAP_LOCKED<span class="token punctuation">)</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">can_do_mlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EPERM<span class="token punctuation">;</span>
+
+    <span class="token comment">/* mlock MCL_FUTURE? */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vm_flags <span class="token operator">&amp;</span> VM_LOCKED<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> locked<span class="token punctuation">,</span> lock_limit<span class="token punctuation">;</span>
+        locked <span class="token operator">=</span> len <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">;</span>
+        locked <span class="token operator">+=</span> mm<span class="token operator">-&gt;</span>locked_vm<span class="token punctuation">;</span>
+        lock_limit <span class="token operator">=</span> <span class="token function">rlimit</span><span class="token punctuation">(</span>RLIMIT_MEMLOCK<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        lock_limit <span class="token operator">&gt;&gt;=</span> PAGE_SHIFT<span class="token punctuation">;</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>locked <span class="token operator">&gt;</span> lock_limit <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span><span class="token function">capable</span><span class="token punctuation">(</span>CAP_IPC_LOCK<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EAGAIN<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    inode <span class="token operator">=</span> file <span class="token operator">?</span> file<span class="token operator">-&gt;</span>f_path<span class="token punctuation">.</span>dentry<span class="token operator">-&gt;</span>d_inode <span class="token operator">:</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+
+    <span class="token comment">// 如果 file 不为 NULL，则表示是基于文件的映射，如果是 NULL 则是匿名映射</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>file<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">// 根据是私有映射还是共享映射进行不同的处理</span>
+        <span class="token comment">/*
+         * 根据标志指定的 map 种类，把为文件设置的访问权考虑进去。
+         * 如果所请求的内存映射是共享可写的，就要检查要映射的文件是为写入而打开的，而不是以追加模式打开的，还要检查文件上没有上强制锁。
+         * 对于任何种类的内存映射，都要检查文件是否为读操作而打开的。
+        */</span>
+        <span class="token keyword keyword-switch">switch</span> <span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> MAP_TYPE<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            <span class="token keyword keyword-case">case</span> MAP_SHARED<span class="token operator">:</span>
+                <span class="token comment">/*
+                 * prot 的值可以为 PROT_EXEC、PROT_WRITE、PROT_READ、PROT_NONE，表示映射区的属性
+                 * 如果 prot 表示映射区可以被写入，但是文件创建时指定的文件模式 f_mode 不为 FMODE_WRITE（不可写），
+                 * 那么返回错误信息，这是因为共享文件映射，对于映射区的任何更改，都会被写回到磁盘文件中，因此文件在
+                 * 创建时不指定可写（FMODE_WRITE），那么就会出现错误
+                 */</span>
+                <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>prot <span class="token operator">&amp;</span> PROT_WRITE<span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span><span class="token punctuation">(</span>file<span class="token operator">-&gt;</span>f_mode <span class="token operator">&amp;</span> FMODE_WRITE<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                    <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EACCES<span class="token punctuation">;</span>
+
+                <span class="token comment">/*
+                 * Make sure we don't allow writing to an append-only file.
+                 * 一个文件在创建时，指定的文件模式为：可读、可写、既可读又可写，对于后面两种情况，因为文件映射区中的修改可能发生在
+                 * 任何地方，如果文件是追加模式，那么内核也无法将修改写回到磁盘文件中；如果文件以只读的方式打开，那么文件映射区中的
+                 * 内容不会发生变化，共享文件映射中最重要的特性，映射区中的变化会写回到磁盘中就没有任何意义，因此可以降级成私有文件映射
+                 */</span>
+                <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">IS_APPEND</span><span class="token punctuation">(</span>inode<span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token punctuation">(</span>file<span class="token operator">-&gt;</span>f_mode <span class="token operator">&amp;</span> FMODE_WRITE<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                    <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EACCES<span class="token punctuation">;</span>
+
+                <span class="token comment">/*
+                 * Make sure there are no mandatory locks on the file.
+                 * 确保文件的 inode 结点没有被上锁
+                 */</span>
+                <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">locks_verify_locked</span><span class="token punctuation">(</span>inode<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                    <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EAGAIN<span class="token punctuation">;</span>
+
+                <span class="token comment">// 设置 vm_area_struct 的 flag 标志，可共享</span>
+                vm_flags <span class="token operator">|=</span> VM_SHARED <span class="token operator">|</span> VM_MAYSHARE<span class="token punctuation">;</span>
+                <span class="token comment">/*
+                 * This looks strange, but when we don't have the file open for writing, we can demote the shared mapping 
+                 * to a simpler private mapping. 
+                 *
+                 * We leave the VM_MAYSHARE bit on, just to get correct output from /proc/xxx/maps..
+                 */</span>
+                <span class="token comment">// 如果 file 文件在创建时指明不可写，那么就将前面代码中 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC 的 VM_MAYWRITE 删除掉</span>
+                <span class="token comment">// 并且由于文件被打开为只读，映射区 prot 的属性也只能为 PROT_READ，而不能包含 PROT_WRITE，那么文件映射区中的内容不会发生变化，</span>
+                <span class="token comment">// 共享文件映射中最重要的特性，映射区中的变化会写回到磁盘中就没有任何意义，因此将内存映射方式更改为 PRIVATE MAPPING（私有映射）</span>
+                <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token punctuation">(</span>file<span class="token operator">-&gt;</span>f_mode <span class="token operator">&amp;</span> FMODE_WRITE<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                    vm_flags <span class="token operator">&amp;=</span> <span class="token operator">~</span><span class="token punctuation">(</span>VM_MAYWRITE <span class="token operator">|</span> VM_SHARED<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token comment">/* 上面 MAP_SHARED 选项没有 break，直接 fall through */</span>
+            <span class="token keyword keyword-case">case</span> MAP_PRIVATE<span class="token operator">:</span>
+                <span class="token comment">// 如果 file 没有在创建时设置读属性，那么直接返回，因为没有读属性，则表明无法将文件中的内容映射到内存中</span>
+                <span class="token comment">// Makes sense, as the contents of the file needs to be read to initialize parts of the memory you don't write.</span>
+                <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token punctuation">(</span>file<span class="token operator">-&gt;</span>f_mode <span class="token operator">&amp;</span> FMODE_READ<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                    <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EACCES<span class="token punctuation">;</span>
+                <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">path_noexec</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>file<span class="token operator">-&gt;</span>f_path<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vm_flags <span class="token operator">&amp;</span> VM_EXEC<span class="token punctuation">)</span>
+                        <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EPERM<span class="token punctuation">;</span>
+                    vm_flags <span class="token operator">&amp;=</span> <span class="token operator">~</span>VM_MAYEXEC<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>file<span class="token operator">-&gt;</span>f_op <span class="token operator">||</span> <span class="token operator">!</span>file<span class="token operator">-&gt;</span>f_op<span class="token operator">-&gt;</span>mmap<span class="token punctuation">)</span>
+                    <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>ENODEV<span class="token punctuation">;</span>
+                <span class="token keyword keyword-break">break</span><span class="token punctuation">;</span>
+
+            <span class="token keyword keyword-default">default</span><span class="token operator">:</span>
+                <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EINVAL<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span> <span class="token keyword keyword-else">else</span> <span class="token punctuation">{</span>
+        <span class="token keyword keyword-switch">switch</span> <span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> MAP_TYPE<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            <span class="token keyword keyword-case">case</span> MAP_SHARED<span class="token operator">:</span>
+                <span class="token comment">/*
+                 * Ignore pgoff.
+                 * 共享匿名映射忽略 pgoff
+                 */</span>
+                pgoff <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+                vm_flags <span class="token operator">|=</span> VM_SHARED <span class="token operator">|</span> VM_MAYSHARE<span class="token punctuation">;</span>
+                <span class="token keyword keyword-break">break</span><span class="token punctuation">;</span>
+            <span class="token keyword keyword-case">case</span> MAP_PRIVATE<span class="token operator">:</span>
+                <span class="token comment">/*
+                 * Set pgoff according to addr for anon_vma.
+                 * 匿名私有映射使用分配出来的 addr 作为 pgoff
+                 */</span>
+                pgoff <span class="token operator">=</span> addr <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">;</span>
+                <span class="token keyword keyword-break">break</span><span class="token punctuation">;</span>
+            <span class="token keyword keyword-default">default</span><span class="token operator">:</span>
+                <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>EINVAL<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    error <span class="token operator">=</span> <span class="token function">security_file_mmap</span><span class="token punctuation">(</span>file<span class="token punctuation">,</span> reqprot<span class="token punctuation">,</span> prot<span class="token punctuation">,</span> flags<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>error<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> error<span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-return">return</span> <span class="token function">mmap_region</span><span class="token punctuation">(</span>file<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> len<span class="token punctuation">,</span> flags<span class="token punctuation">,</span> vm_flags<span class="token punctuation">,</span> pgoff<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p><strong><code>mmap_region</code></strong> 函数完成最后的映射过程，即将用户需要映射的虚拟地址范围建立起来，然后再将其加入当前进程的 <strong><code>mm_struct</code></strong> 结构中。根据源码我们可以知道，该函数根据用户需要分配的地址空间的信息，或扩展当前的进程的虚拟地址空间范围，或创建一个新的 vma 结构加入到进程的 <strong><code>mm_struct</code></strong> 当中，<strong>这样当前进程就有了可以直接访问的 mmap 分配的内存区域</strong>。这样就完成了整个 mmap 的映射过程，<strong>但实质上只是分配了 vma 结构去进程的虚拟地址空间当中</strong>，访问的时候会触发 <strong><code>page-fault</code></strong> 缺页异常，才会给这些刚刚分配的虚拟地址空间的 vma 结构建立虚拟地址和物理地址的映射关系。</p>
+<p>下面是 <strong><code>mmap_region</code></strong> 函数中用到的相关 helper 方法：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token comment">// 查找第一个满足 addr &lt; vm_end 的 VMA，如果没有，则为 NULL。</span>
+<span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span><span class="token function">find_vma</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>mm<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_node</span> <span class="token operator">*</span>rb_node<span class="token punctuation">;</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span>vma<span class="token punctuation">;</span>
+  
+    <span class="token comment">// 1.首先尝试从 mmap_cache 缓存中查找 vma，如果不满足下列条件中的任意一个则从红黑树中查找合适的 vma</span>
+    vma <span class="token operator">=</span> <span class="token function">vmacache_find</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> addr<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">likely</span><span class="token punctuation">(</span>vma<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> vma<span class="token punctuation">;</span>
+    
+    <span class="token comment">// 获取红黑树根节点</span>
+    rb_node <span class="token operator">=</span> mm<span class="token operator">-&gt;</span>mm_rb<span class="token punctuation">.</span>rb_node<span class="token punctuation">;</span> 
+    
+    <span class="token comment">// 2.遍历红黑树，找到合适的vma</span>
+    <span class="token keyword keyword-while">while</span> <span class="token punctuation">(</span>rb_node<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span>tmp<span class="token punctuation">;</span>
+
+        tmp <span class="token operator">=</span> <span class="token function">rb_entry</span><span class="token punctuation">(</span>rb_node<span class="token punctuation">,</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span><span class="token punctuation">,</span> vm_rb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token comment">// 条件 1: vma 的结束地址是否大于给定地址 addr</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>tmp<span class="token operator">-&gt;</span>vm_end <span class="token operator">&gt;</span> addr<span class="token punctuation">)</span> <span class="token punctuation">{</span> 
+            vma <span class="token operator">=</span> tmp<span class="token punctuation">;</span>
+            <span class="token comment">// 条件 2: vma 的起始地址是否小于给定地址 addr</span>
+            <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>tmp<span class="token operator">-&gt;</span>vm_start <span class="token operator">&lt;=</span> addr<span class="token punctuation">)</span>
+                <span class="token comment">// 条件 1 和条件 2 同时满足保证给定的地址 addr 是处于 vma 的范围之内的</span>
+                <span class="token comment">// vma_start &lt; addr &lt; addr vma_end</span>
+                <span class="token keyword keyword-break">break</span><span class="token punctuation">;</span> 
+            <span class="token comment">// 如果满足条件 1 不满足条件 2，则只能找到一个距离给定地址最近的 vma 并且该 vma 的结束地址要大于给定地址</span>
+            <span class="token comment">// addr &lt; vma_start &lt; vma_end</span>
+            rb_node <span class="token operator">=</span> rb_node<span class="token operator">-&gt;</span>rb_left<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword keyword-else">else</span>
+            rb_node <span class="token operator">=</span> rb_node<span class="token operator">-&gt;</span>rb_right<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vma<span class="token punctuation">)</span>
+        <span class="token comment">// 3.将结果保存在 mmap_cache 中</span>
+        <span class="token function">vmacache_update</span><span class="token punctuation">(</span>addr<span class="token punctuation">,</span> vma<span class="token punctuation">)</span><span class="token punctuation">;</span> 
+
+    <span class="token keyword keyword-return">return</span> vma<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// find_vma_prepare 和 find_vma 的逻辑大致相同，都是查找第一个满足 addr &lt; vm_end 的 VMA，如果没有，则为 NULL。</span>
+<span class="token keyword keyword-static">static</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span><span class="token function">find_vma_prepare</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>mm<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">,</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span><span class="token operator">*</span>pprev<span class="token punctuation">,</span> 
+            <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_node</span> <span class="token operator">*</span><span class="token operator">*</span><span class="token operator">*</span>rb_link<span class="token punctuation">,</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_node</span> <span class="token operator">*</span><span class="token operator">*</span> rb_parent<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span><span class="token operator">*</span> vma<span class="token punctuation">;</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_node</span><span class="token operator">*</span><span class="token operator">*</span> __rb_link<span class="token punctuation">,</span> <span class="token operator">*</span> __rb_parent<span class="token punctuation">,</span> <span class="token operator">*</span> rb_prev<span class="token punctuation">;</span>
+
+    __rb_link <span class="token operator">=</span> <span class="token operator">&amp;</span>mm<span class="token operator">-&gt;</span>mm_rb<span class="token punctuation">.</span>rb_node<span class="token punctuation">;</span>
+    rb_prev <span class="token operator">=</span> __rb_parent <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+    vma <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-while">while</span> <span class="token punctuation">(</span><span class="token operator">*</span>__rb_link<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span>vma_tmp<span class="token punctuation">;</span>
+
+        __rb_parent <span class="token operator">=</span> <span class="token operator">*</span>__rb_link<span class="token punctuation">;</span>
+        vma_tmp <span class="token operator">=</span> <span class="token function">rb_entry</span><span class="token punctuation">(</span>__rb_parent<span class="token punctuation">,</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span><span class="token punctuation">,</span> vm_rb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vma_tmp<span class="token operator">-&gt;</span>vm_end <span class="token operator">&gt;</span> addr<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            vma <span class="token operator">=</span> vma_tmp<span class="token punctuation">;</span>
+            <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vma_tmp<span class="token operator">-&gt;</span>vm_start <span class="token operator">&lt;=</span> addr<span class="token punctuation">)</span>
+                <span class="token keyword keyword-break">break</span><span class="token punctuation">;</span>
+            __rb_link <span class="token operator">=</span> <span class="token operator">&amp;</span>__rb_parent<span class="token operator">-&gt;</span>rb_left<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword keyword-else">else</span> <span class="token punctuation">{</span>
+            rb_prev <span class="token operator">=</span> __rb_parent<span class="token punctuation">;</span>
+            __rb_link <span class="token operator">=</span> <span class="token operator">&amp;</span>__rb_parent<span class="token operator">-&gt;</span>rb_right<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token operator">*</span>pprev <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>rb_prev<span class="token punctuation">)</span>
+        <span class="token operator">*</span>pprev <span class="token operator">=</span> <span class="token function">rb_entry</span><span class="token punctuation">(</span>rb_prev<span class="token punctuation">,</span> <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span><span class="token punctuation">,</span> vm_rb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token operator">*</span>rb_link <span class="token operator">=</span> __rb_link<span class="token punctuation">;</span>
+    <span class="token operator">*</span>rb_parent <span class="token operator">=</span> __rb_parent<span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> vma<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>下面是 <strong><code>mmap_region</code></strong> 的真正源代码：</p>
+<pre data-role="codeBlock" data-info="c{.line-numbers}" class="language-c c line-numbers"><code><span class="token comment">/*
+ * Return true if the calling process may expand its vm space by the passed number of pages
+ */</span>
+<span class="token keyword keyword-int">int</span> <span class="token function">may_expand_vm</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>mm<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> npages<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token comment">/* pages */</span>
+    <span class="token comment">// mm_struct 结构体中的 total_vm 表示在进程虚拟内存空间中总共与物理内存映射的页的总数</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> cur <span class="token operator">=</span> mm<span class="token operator">-&gt;</span>total_vm<span class="token punctuation">;</span>    
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> lim<span class="token punctuation">;</span>
+
+    <span class="token comment">// 每个进程在运行时系统不会无限制的允许单个进程不断的消耗资源，因此都会设置资源限制。</span>
+    <span class="token comment">// Linux 系统中使用 resource limit 来表示，每个进程都可以设置不同的资源限制，当前进程和其以后 fork 的子进程会遵循此限制，而其他进程不受当前进程条件的影响。</span>
+    <span class="token comment">// RLIMIT_AS/RLIMIT_VMEM: 这两个资源表示的是同一个含义，都是只 address space 限制，可用内存用户地址空间最大长度，会影响到 sbrk 和 mmap 函数。</span>
+    lim <span class="token operator">=</span> <span class="token function">rlimit</span><span class="token punctuation">(</span>RLIMIT_AS<span class="token punctuation">)</span> <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>cur <span class="token operator">+</span> npages <span class="token operator">&gt;</span> lim<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/*
+ * We account for memory if it's a private writeable mapping, not hugepages and VM_NORESERVE wasn't set.
+ * over-commit 或者说过度利用交换空间（MAP_NORESERVE）只对私有可写映射（包含文件、匿名映射）、共享匿名映射有作用，因为只有这两种映射
+ * 需要使用交换空间，只读私有映射中的内容是不可变的，无需使用交换空间，而共享文件映射由于映射文件本身担当了映射的交换空间，所以也不需要
+ */</span>
+<span class="token keyword keyword-static">static</span> <span class="token keyword keyword-inline">inline</span> <span class="token keyword keyword-int">int</span> <span class="token function">accountable_mapping</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span>file<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-int">int</span> vm_flags<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token comment">/*
+     * hugetlb has its own accounting separate from the core VM
+     * VM_HUGETLB may not be set yet so we cannot check for that flag.
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>file <span class="token operator">&amp;&amp;</span> <span class="token function">is_file_hugepages</span><span class="token punctuation">(</span>file<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-return">return</span> <span class="token punctuation">(</span>vm_flags <span class="token operator">&amp;</span> <span class="token punctuation">(</span>VM_NORESERVE <span class="token operator">|</span> VM_SHARED <span class="token operator">|</span> VM_WRITE<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">==</span> VM_WRITE<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">OVERCOMMIT_GUESS</span>        <span class="token expression"><span class="token number">0</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">OVERCOMMIT_ALWAYS</span>       <span class="token expression"><span class="token number">1</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">OVERCOMMIT_NEVER</span>        <span class="token expression"><span class="token number">2</span></span></span>
+<span class="token comment">/* heuristic overcommit */</span>
+<span class="token keyword keyword-int">int</span> sysctl_overcommit_memory <span class="token operator">=</span> OVERCOMMIT_GUESS<span class="token punctuation">;</span>  
+
+<span class="token comment">/*
+ * __vm_enough_memory 函数，返回 0 表示进程有足够内存分配，返回 -ENOMEM 表示没有足够内存分配
+ * Check that a process has enough memory to allocate a new virtual mapping. 0 means there is enough memory for the allocation to
+ * succeed and -ENOMEM implies there is not.
+ *
+ * We currently support three overcommit policies, which are set via the vm.overcommit_memory sysctl.  
+ * See Documentation/vm/overcommit-accounting
+ *
+ * 如果是内核 root 用户，那么 cap_sys_admin 是 1，否则 cap_sys_admin 为 0
+ * cap_sys_admin is 1 if the process has admin privileges, 0 otherwise. Note this is a helper function intended to be used by 
+ * LSMs which wish to use this logic.
+ */</span>
+ <span class="token comment">// 参数：内存描述符 mm_struct，申请的内存大小 pages(1 page = 4K)，cap_sys_admin 是否是 root 用户还是普通用户</span>
+<span class="token keyword keyword-int">int</span> <span class="token function">__vm_enough_memory</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>mm<span class="token punctuation">,</span> <span class="token keyword keyword-long">long</span> pages<span class="token punctuation">,</span> <span class="token keyword keyword-int">int</span> cap_sys_admin<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> free<span class="token punctuation">,</span> allowed<span class="token punctuation">;</span>
+    <span class="token function">vm_acct_memory</span><span class="token punctuation">(</span>pages<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/*
+     * Sometimes we want to use more memory than we have
+     * 由于内核不限制 overcommit，直接返回 0，
+     * sysctl_overcommit_memory 受内核参数 /proc/sys/vm/overcommit_memory 控制
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>sysctl_overcommit_memory <span class="token operator">==</span> OVERCOMMIT_ALWAYS<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+
+    <span class="token comment">// 若为 OVERCOMMIT_GUESS，内核会进行判断内存分配是否合理</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>sysctl_overcommit_memory <span class="token operator">==</span> OVERCOMMIT_GUESS<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> n<span class="token punctuation">;</span>
+        <span class="token comment">// 首先会计算当前系统的可用内存，计算有多少空闲 page frame</span>
+        free <span class="token operator">=</span> <span class="token function">global_zone_page_state</span><span class="token punctuation">(</span>NR_FREE_PAGES<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// 计算有多少 page cache 使用的 page frame，主要是用户空间进程读写文件造成的</span>
+        <span class="token comment">// 这些 cache 都是为了加快系统性能而增加的，提高 CPU 读写命中率，因此，如果直接操作到磁盘，本质上这些 page cache 都是 free 的</span>
+        free <span class="token operator">+=</span> <span class="token function">global_page_state</span><span class="token punctuation">(</span>NR_FILE_PAGES<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">/*
+         * shmem pages shouldn't be counted as free in this case, they can't be purged, only swapped out, and
+         * that won't affect the overall amount of available memory in the system.
+         */</span>
+        <span class="token comment">// 用于进程间的 share memory 机制的这些 shmem page frame 不能认为是 free 的，需要减去</span>
+        <span class="token comment">// 而且它们不能被清除 (free)，只能换出 (swap out)</span>
+        free <span class="token operator">-=</span> <span class="token function">global_node_page_state</span><span class="token punctuation">(</span>NR_SHMEM<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 加上 swap file 或者 swap space 上空闲的 "page frame" 数目。</span>
+        <span class="token comment">// 本质上，swap file 或者 swap space 上的磁盘空间都是给 anonymous page 做腾挪之用，其实这里的 "page frame" 不是真的 page frame，称之 swap page 好了</span>
+        <span class="token comment">// 这里把 free swap page 的数目也计入 free 主要是因为可以把使用中的 page frame swap out 到 free swap page 上，因此也算是 free page</span>
+        free <span class="token operator">+=</span> <span class="token function">get_nr_swap_pages</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">/*
+         * Any slabs which are created with the SLAB_RECLAIM_ACCOUNT flag claim to have contents
+         * which are reclaimable, under pressure.  The dentry cache and most inode caches should fall into this
+         */</span> 
+        <span class="token comment">// 加上被标记为可回收的 slab 对应的页面</span>
+        free <span class="token operator">+=</span> <span class="token function">global_page_state</span><span class="token punctuation">(</span>NR_SLAB_RECLAIMABLE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">/*
+         * Part of the kernel memory, which can be released under memory pressure.
+         */</span>
+        <span class="token comment">// 加上被标记为可回收的非 slab 的内核页面</span>
+        free <span class="token operator">+=</span> <span class="token function">global_node_page_state</span><span class="token punctuation">(</span>NR_KERNEL_MISC_RECLAIMABLE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// totalreserve_pages，这是一个能让系统运行需要预留的 page frame 的数目，</span>
+        <span class="token comment">// 因此我们要从减去 totalreserve_pages。如果当前 free page 数目小于 totalreserve_pages，则拒绝本次对内核空间里面的虚拟内存的申请。</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>free <span class="token operator">&lt;=</span> totalreserve_pages<span class="token punctuation">)</span>
+            <span class="token keyword keyword-goto">goto</span> error<span class="token punctuation">;</span>
+        <span class="token keyword keyword-else">else</span>
+            free <span class="token operator">-=</span> totalreserve_pages<span class="token punctuation">;</span>
+
+        <span class="token comment">/*
+         * Leave the last 3% for root
+         * 如果是普通的进程，还需要保留 admin_reserve_kbytes 的 free page，以便在出问题时可以让 root 用户可以登录并进行恢复操作
+         */</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>cap_sys_admin<span class="token punctuation">)</span>
+            free <span class="token operator">-=</span> sysctl_admin_reserve_kbytes <span class="token operator">&gt;&gt;</span> <span class="token punctuation">(</span>PAGE_SHIFT <span class="token operator">-</span> <span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 最关键的判断来了</span>
+        <span class="token comment">// 比对当前系统的可用内存（free）和本次请求分配 virtual memory 的 page 数目 (pages)，</span>
+        <span class="token comment">// 如果在前面减去了所必须的 page frame 之后，还有足够的 page 可以满足本次分配，那么就批准本次对内核空间里面的虚拟内存的分配。</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>free <span class="token operator">&gt;</span> pages<span class="token punctuation">)</span>
+            <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+
+        <span class="token keyword keyword-goto">goto</span> error<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// 下面为 OVERCOMMIT_NEVER 的情况，是禁止出现 overcommit</span>
+    <span class="token comment">// 这里调用 vm_commit_limit 得到判断是否出现 overcommit 的阈值 allowed，以 page 为单位</span>
+    allowed <span class="token operator">=</span> <span class="token function">vm_commit_limit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/*
+     * Leave the last 3% for root
+     * 同前面一样，需要减去预留给 root 用户的内存
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>cap_sys_admin<span class="token punctuation">)</span>
+        allowed <span class="token operator">-=</span> sysctl_admin_reserve_kbytes <span class="token operator">&gt;&gt;</span> <span class="token punctuation">(</span>PAGE_SHIFT <span class="token operator">-</span> <span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    allowed <span class="token operator">+=</span> total_swap_pages<span class="token punctuation">;</span>
+
+    <span class="token comment">/*
+     * Don't let a single process grow so big a user can't recover
+     */</span>
+    <span class="token comment">// 如果是用户空间的进程，要为用户能够从绝境中恢复而保留一些 page frame，具体保留多少需要考量两个因素，</span>
+    <span class="token comment">// 一个是单一进程的 total virtual memory，一个是用户设定的运行时参数 user_reserve_kbytes。</span>
+    <span class="token comment">// 更具体的考量因素可以参考 https://lkml.org/lkml/2013/3/18/812</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>mm<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        reserve <span class="token operator">=</span> sysctl_user_reserve_kbytes <span class="token operator">&gt;&gt;</span> <span class="token punctuation">(</span>PAGE_SHIFT <span class="token operator">-</span> <span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// 注意：至于为什么要除以 32，就跟上面链接里面描述的一样，取一个进程 total_vm 的 3%，即接近是 1/32，</span>
+        <span class="token comment">// 然后跟用户设定的 reserve 取 min，主要是避免用户把 sysctl_user_reserve_kbytes 设置的太大了，给了一个保护性措施</span>
+        allowed <span class="token operator">-=</span> <span class="token class-name">min_t</span><span class="token punctuation">(</span><span class="token keyword keyword-long">long</span><span class="token punctuation">,</span> mm<span class="token operator">-&gt;</span>total_vm <span class="token operator">/</span> <span class="token number">32</span><span class="token punctuation">,</span> reserve<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// allowed 变量保存了判断 overcommit 的上限（CommitLimit），vm_committed_as（Committed_AS）保存了当前系统中已经申请（包括本次）</span>
+    <span class="token comment">// 的 virtual memory 的数目。如果大于这个上限就判断 overcommit，本次申请虚拟内存失败</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">percpu_counter_read_positive</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>vm_committed_as<span class="token punctuation">)</span> <span class="token operator">&lt;</span> allowed<span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+error<span class="token operator">:</span>
+    <span class="token function">vm_unacct_memory</span><span class="token punctuation">(</span>pages<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>ENOMEM<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> <span class="token function">mmap_region</span><span class="token punctuation">(</span><span class="token keyword keyword-struct">struct</span> <span class="token class-name">file</span> <span class="token operator">*</span>file<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> addr<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> len<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> flags<span class="token punctuation">,</span> 
+                            <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-int">int</span> vm_flags<span class="token punctuation">,</span> <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> pgoff<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">mm_struct</span> <span class="token operator">*</span>mm <span class="token operator">=</span> current<span class="token operator">-&gt;</span>mm<span class="token punctuation">;</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">vm_area_struct</span> <span class="token operator">*</span>vma<span class="token punctuation">,</span> <span class="token operator">*</span>prev<span class="token punctuation">;</span>
+    <span class="token keyword keyword-int">int</span> correct_wcount <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-int">int</span> error<span class="token punctuation">;</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">rb_node</span> <span class="token operator">*</span><span class="token operator">*</span>rb_link<span class="token punctuation">,</span> <span class="token operator">*</span>rb_parent<span class="token punctuation">;</span>
+    <span class="token keyword keyword-unsigned">unsigned</span> <span class="token keyword keyword-long">long</span> charged <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-struct">struct</span> <span class="token class-name">inode</span> <span class="token operator">*</span>inode <span class="token operator">=</span>  file <span class="token operator">?</span> file<span class="token operator">-&gt;</span>f_path<span class="token punctuation">.</span>dentry<span class="token operator">-&gt;</span>d_inode <span class="token operator">:</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/* Check against address space limit. */</span>
+    <span class="token comment">// 检查需要的申请的页面长度 + 进程虚拟内存空间中已经映射的页数，是否超过的虚拟内存地址空间的限制</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">may_expand_vm</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> len <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>ENOMEM<span class="token punctuation">;</span>
+
+    <span class="token comment">/*
+     * 函数 find_vma_prepare() 与 find_vma() 基本相同，它扫描当前进程地址空间的 vm_area_struct 结构所形成的红黑树，
+     * 试图找到结束地址高于 addr 的第一个区间 vma；如果找到了一个虚拟区，并且 addr + len &gt; vma.start，说明 addr 所在的虚拟区已经在使用，也就是已经有映射存在，
+     * 因此要调用 do_munmap() 把这个老的虚拟区从进程地址空间中撤销，如果撤销不成功，就返回一个负数；如果撤销成功，就继续查找，
+     * 直到在红黑树中找不到 addr 所在的虚拟区
+     */</span>
+munmap_back<span class="token operator">:</span>
+    vma <span class="token operator">=</span> <span class="token function">find_vma_prepare</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> <span class="token operator">&amp;</span>prev<span class="token punctuation">,</span> <span class="token operator">&amp;</span>rb_link<span class="token punctuation">,</span> <span class="token operator">&amp;</span>rb_parent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vma <span class="token operator">&amp;&amp;</span> vma<span class="token operator">-&gt;</span>vm_start <span class="token operator">&lt;</span> addr <span class="token operator">+</span> len<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">// returns 0 on success or -1 on error</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">do_munmap</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> len<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>ENOMEM<span class="token punctuation">;</span>
+        <span class="token keyword keyword-goto">goto</span> munmap_back<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/*
+     * Set 'VM_NORESERVE' if we should not account for the memory use of this mapping.
+     * VM_NORESERVE: Do not reserve swap space for this mapping. When swap space is not reserved one might get 
+     * SIGSEGV upon a write if no physical memory is available. 
+     *
+     * 为映射分配（或预留）足够的交换空间，就是程序使用 mmap 分配了 100MB 的空间（私有可写映射或者共享匿名映射），那么交换空间中
+     * 需要预留 100MB 的空间，但是这整个映射中可能只有很少的一部分被用到，因此允许过度利用空间（over-commit）/懒交换预留/MAP_NORESERVE 
+     * 的意思其实就是，当映射中某个物理分页真正被使用到时，才在交换空间中预留对应的空间，而不提前为整个映射预留空间
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> MAP_NORESERVE<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">/* We honor MAP_NORESERVE if allowed to overcommit */</span>
+        <span class="token comment">// 如果在系统中允许 over-commit，允许你申请超过系统实际拥有的内存（默认都是允许），那么增加 VM_NORESERVE 标志</span>
+        <span class="token comment">// 如果在系统中不允许 over-commit，那么内核会直接忽略掉 VM_NORESERVE 参数，在这种情况下，内核会在所有 mmap() 分配上执行严格的记账并将系统</span>
+        <span class="token comment">// 中此类分配的总量控制在小于或等于 swap_size + ram_size * overcommit_ratio / 100</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>sysctl_overcommit_memory <span class="token operator">!=</span> OVERCOMMIT_NEVER<span class="token punctuation">)</span>
+            vm_flags <span class="token operator">|=</span> VM_NORESERVE<span class="token punctuation">;</span>
+
+        <span class="token comment">/* hugetlb applies strict overcommit unless MAP_NORESERVE */</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>file <span class="token operator">&amp;&amp;</span> <span class="token function">is_file_hugepages</span><span class="token punctuation">(</span>file<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            vm_flags <span class="token operator">|=</span> VM_NORESERVE<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/*
+     * Private writable mapping: check memory availability
+     * 对只读私有映射，且没有设置 MAP_NORESERVE 时（即不允许过度利用交换空间），才考虑检查是否有足够的内存来进行映射分配
+     */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">accountable_mapping</span><span class="token punctuation">(</span>file<span class="token punctuation">,</span> vm_flags<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        charged <span class="token operator">=</span> len <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">;</span>
+        <span class="token comment">// 检查是否有足够的内存进行映射分配</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">security_vm_enough_memory</span><span class="token punctuation">(</span>charged<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token keyword keyword-return">return</span> <span class="token operator">-</span>ENOMEM<span class="token punctuation">;</span>
+        vm_flags <span class="token operator">|=</span> VM_ACCOUNT<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/*
+     * Can we just expand an old mapping?
+     * 当前申请的虚拟地址空间是否可以当前进程的虚拟地址空间进行合并，如果可以合并，直接修改当前进程的 vma 的 vm_start 和 vm_end 的值
+     */</span>
+    vma <span class="token operator">=</span> <span class="token function">vma_merge</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> prev<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> addr <span class="token operator">+</span> len<span class="token punctuation">,</span> vm_flags<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> file<span class="token punctuation">,</span> pgoff<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vma<span class="token punctuation">)</span>
+        <span class="token keyword keyword-goto">goto</span> out<span class="token punctuation">;</span>
+
+    <span class="token comment">/*
+     * Determine the object being mapped and call the appropriate specific mapper. the address has already been validated, but
+     * not unmapped, but the maps are removed from the list.
+     * 如果无法合并，根据用户申请的地址空间范围，分配一个新的 vma 结构
+     */</span>
+    vma <span class="token operator">=</span> <span class="token function">kmem_cache_zalloc</span><span class="token punctuation">(</span>vm_area_cachep<span class="token punctuation">,</span> GFP_KERNEL<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>vma<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        error <span class="token operator">=</span> <span class="token operator">-</span>ENOMEM<span class="token punctuation">;</span>
+        <span class="token keyword keyword-goto">goto</span> unacct_error<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+     <span class="token comment">// 初始化 vma 的信息</span>
+    vma<span class="token operator">-&gt;</span>vm_mm <span class="token operator">=</span> mm<span class="token punctuation">;</span>
+    vma<span class="token operator">-&gt;</span>vm_start <span class="token operator">=</span> addr<span class="token punctuation">;</span>
+    vma<span class="token operator">-&gt;</span>vm_end <span class="token operator">=</span> addr <span class="token operator">+</span> len<span class="token punctuation">;</span>
+    vma<span class="token operator">-&gt;</span>vm_flags <span class="token operator">=</span> vm_flags<span class="token punctuation">;</span>
+    vma<span class="token operator">-&gt;</span>vm_page_prot <span class="token operator">=</span> <span class="token function">vm_get_page_prot</span><span class="token punctuation">(</span>vm_flags<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    vma<span class="token operator">-&gt;</span>vm_pgoff <span class="token operator">=</span> pgoff<span class="token punctuation">;</span>
+    <span class="token function">INIT_LIST_HEAD</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>vma<span class="token operator">-&gt;</span>anon_vma_chain<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>file<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">// 省略代码.....</span>
+    <span class="token punctuation">}</span> <span class="token keyword keyword-else">else</span> <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vm_flags <span class="token operator">&amp;</span> VM_SHARED<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">// 省略代码.....</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token function">vma_wants_writenotify</span><span class="token punctuation">(</span>vma<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">// 省略代码.....</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token function">vma_link</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> vma<span class="token punctuation">,</span> prev<span class="token punctuation">,</span> rb_link<span class="token punctuation">,</span> rb_parent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    file <span class="token operator">=</span> vma<span class="token operator">-&gt;</span>vm_file<span class="token punctuation">;</span>
+
+    <span class="token comment">/* Once vma denies write, undo our temporary denial count */</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>correct_wcount<span class="token punctuation">)</span>
+        <span class="token function">atomic_inc</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>inode<span class="token operator">-&gt;</span>i_writecount<span class="token punctuation">)</span><span class="token punctuation">;</span>
+out<span class="token operator">:</span>
+    <span class="token function">perf_event_mmap</span><span class="token punctuation">(</span>vma<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">// 更新当前的虚拟地址空间的使用统计信息</span>
+    mm<span class="token operator">-&gt;</span>total_vm <span class="token operator">+=</span> len <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">;</span>
+    <span class="token function">vm_stat_account</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> vm_flags<span class="token punctuation">,</span> file<span class="token punctuation">,</span> len <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>vm_flags <span class="token operator">&amp;</span> VM_LOCKED<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">mlock_vma_pages_range</span><span class="token punctuation">(</span>vma<span class="token punctuation">,</span> addr<span class="token punctuation">,</span> addr <span class="token operator">+</span> len<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            mm<span class="token operator">-&gt;</span>locked_vm <span class="token operator">+=</span> <span class="token punctuation">(</span>len <span class="token operator">&gt;&gt;</span> PAGE_SHIFT<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword keyword-else">else</span> <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> MAP_POPULATE<span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span><span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> MAP_NONBLOCK<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token function">make_pages_present</span><span class="token punctuation">(</span>addr<span class="token punctuation">,</span> addr <span class="token operator">+</span> len<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 返回分配的 addr</span>
+    <span class="token keyword keyword-return">return</span> addr<span class="token punctuation">;</span>
+
+unmap_and_free_vma<span class="token operator">:</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>correct_wcount<span class="token punctuation">)</span>
+        <span class="token function">atomic_inc</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>inode<span class="token operator">-&gt;</span>i_writecount<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    vma<span class="token operator">-&gt;</span>vm_file <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+    <span class="token function">fput</span><span class="token punctuation">(</span>file<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/* Undo any partial mapping done by a device driver. */</span>
+    <span class="token function">unmap_region</span><span class="token punctuation">(</span>mm<span class="token punctuation">,</span> vma<span class="token punctuation">,</span> prev<span class="token punctuation">,</span> vma<span class="token operator">-&gt;</span>vm_start<span class="token punctuation">,</span> vma<span class="token operator">-&gt;</span>vm_end<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    charged <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+free_vma<span class="token operator">:</span>
+    <span class="token function">kmem_cache_free</span><span class="token punctuation">(</span>vm_area_cachep<span class="token punctuation">,</span> vma<span class="token punctuation">)</span><span class="token punctuation">;</span>
+unacct_error<span class="token operator">:</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>charged<span class="token punctuation">)</span>
+        <span class="token function">vm_unacct_memory</span><span class="token punctuation">(</span>charged<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword keyword-return">return</span> error<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre><p>通过分析 mmap 的源码我们发现在调用 mmap() 的时候仅仅申请一个 vm_area_struct 来建立文件与虚拟内存的映射，并没有建立虚拟内存与物理内存的映射。假如没有设置 MAP_POPULATE 标志位，Linux 并不在调用 mmap() 时就为进程分配物理内存空间，直到下次真正访问地址空间时发现数据不存在于物理内存空间时，触发 Page Fault 即缺页中断，Linux 才会将缺失的 Page 换入内存空间。最后，整个 mmap 函数的调用流程如下所示：</p>
+<div align="center">
+    <img src="高级IO函数_static/14.png" width="700">
+</div>
+
+      </div>
+      
+      
+    
+    
+    
+    
+    
+    
+  
+    </body></html>
