@@ -43,9 +43,243 @@ void* shmat(int shmid, const void* shmaddr, int shmflg);
 
 shmaddr 参数有如下几种参数：
 
-- 
+- 如果 **`shmaddr`** 是 NULL，那么段会被附加到内核所选择的一个合适的地址处；
+- 如果 **`shmaddr`** 不为 NULL 并且没有设置 **`SHM_RND`**，那么段会被附加到由 **`shmaddr`** 指定的地址处，它必须是系统分页大小的一个倍数（否则会发生 **`EINVAL`** 错误）；
+- 如果 shmaddr 不为 NULL 并且设置了 **`SHM_RND`**，那么段会被映射到的地址为在 shmaddr 中提供的地址被舍入到最近的常量 **`SHMLBA`** 的倍数。这个常量等于系统分页大小的某个倍数。**在 x86 架构上，`SHMLBA` 的值与系统分页大小是一样的**；
 
-### 5.共享内存实例
+不推荐将 shmaddr 设置为一个非 NULL 值，因为首先它降低了一个应用程序的可移植性（在一个 UNIX 系统上可用的地址在另外一个 UNIX 系统上不一定可用）；其次将一个共享内存段附加到一个正在使用中的特定地址处的操作会失败（比如有另外一个程序在该地址处附加了共享内存段或者创建了内存映射）。
+
+shmat() 的函数结果是返回附加共享内存段的地址。开发人员可以像对待普通的 C 指针那样对待这个值，**通常会将 shmat() 的返回值赋给一个指向某个由程序员定义的结构的指针以便在该段上设定该结构**。
+
+如果给 shmflg 指定 **`SHM_RDONLY`** 标记，那么该共享内存段必须以只读访问，试图更新只读段中的内容会导致段错误（**`SIGSEGV`** 信号）的发生。**如果没有指定 **`SHM_RDONLY`**，那么就既可以读取内存又可以修改内存**。
+
+> **在一个进程中可以多次附加同一个共享内存段**（即将此共享内存段多次添加到进程的虚拟地址空间中，每次附加的虚拟地址不同），即使一个附加操作是只读的而另一个是读写的也没有关系。但是每个附加点上内存中的内容都是一样的，因为进程虚拟内存页表中的不同条目将其映射到同样的内存物理页面。
+
+最后讲解 **`SHM_REMAP`** 标志位，在指定了这个标记之后 shmaddr 的值必须为非 NULL。这个标记要求 shmat()调用替换起点在 shmaddr 处长度为共享内存段的长度的任何既有共享内存段或内存映射。一般来讲，如果试图将一个共享内存段附加到一个已经在用的地址范围时将会导致 **`EINVAL`** 错误的发生。
+
+### 3.分离一个共享内存段
+
+当一个进程不再需要访问一个共享内存段时就可以调用 shmdt() 来将该段分离出其虚拟地址空间了。shmaddr 参数标识出了待分离的段，它应该是由之前的 shmat() 调用返回的一个值。
+
+```c{.line-numbers}
+#include <sys/shm.h>
+/* returns 0 on success, or -1 on error */
+int shmdt(const void* shmaddr);
+```
+
+分离一个共享内存段与删除它是不同的。通过 fork() 创建的子进程会继承其父进程附加的共享内存段。因此，共享内存为父进程和子进程之间的通信提供了一种简单的 IPC 方法。即子进程也可以使用父进程调用 shmat() 函数返回的共享内存段地址，读取/写入数据，实现父子进程间通信。
+
+在一个 exec()中，所有附加的共享内存段都会被分离。在进程终止之后共享内存段也会自动被分离。
+
+下面介绍一个共享内存的使用实例，实现一个单生产者和单消费者模式，并且通过二元信号量机制来控制读写进程对共享内存的并发访问。
+
+首先初始化一个包含两个信号量（**`WRITE_SEM/READ_SEM`**）的信号量集，其中 **`WRITE_SEM`** 的值为 1，因为需要写进程首先往共享内存中写入数据，而 **`READ_SEM`** 的值为 0，读进程直接阻塞。当写进程写完数据后，会将 **`READ_SEM`** 的值增加 1，唤醒读进程。读进程被唤醒后，从共享内存中读取数据，然后将 **`WRITE_SEM`** 的值也增加 1，唤醒写进程，这样不断重复。
+
+但是当写进程写完数据后，会写入一个 0 标志到共享内存中，然后将 **`READ_SEM`** 信号量的值增加 1，跳出循环并再次阻塞在 **`WRITE_SEM`** 信号量上，这是为了等待读进程收到标志后，将共享内存进行分离以及处理可能的其它善后操作。然后读进程再次将 **`WRITE_SEM`** 的值增加 1，唤醒写进程。此时，写进程会删除共享内存段，删除信号量集，然后退出。
+
+<div align="center">
+    <img src="System_V_IPC_之共享内存_static/4.png" width="500"/>
+</div>
+
+下面是写进程与读进程共享的头文件，其中最重要的是定义了 shmseg 结构，程序使用了这个结构来声明指向共享内存段的指针，这样就能给共享内存段中的字节规定一种结构。
+
+```c{.line-numbers}
+#ifndef HTTP_PARSER_SVSHM_XFR_H
+#define HTTP_PARSER_SVSHM_XFR_H
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/sem.h>
+#include <sys/shm.h>
+#include "../semp/binary_sems.h"
+#include "../get_num.h"
+
+/* key for shared memory segment */
+#define SHM_KEY 0x1234
+/* key for semaphore set */
+#define SEM_KEY 0x5678
+/* permissions for our IPC objects */
+#define OBJ_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
+
+/* writer has access to shared memory */
+#define WRITE_SEM 0
+/* reader has access to shared memory */
+#define READ_SEM 1
+
+#ifndef BUF_SIZE
+#define BUF_SIZE 1024
+#endif
+
+/* defines structure of shared memory segment */
+struct shmseg {
+    /* number of bytes used in 'buf' */
+    int cnt;
+    /* data being transferred */
+    char buf[BUF_SIZE];
+};
+
+#endif //HTTP_PARSER_SVSHM_XFR_H
+```
+
+下面是写进程的代码：
+
+```c{.line-numbers}
+int main(int argc, char* argv[]) {
+
+    int semid, shmid, bytes, xfrs;
+    struct shmseg* shmp;
+    union semun dummy;
+
+    semid = semget(SEM_KEY, 2, IPC_CREAT | OBJ_PERMS);
+    if (semid == -1)
+        err_exit("semget-SEM_KEY");
+    /* 初始化写者的信号量为 1 */
+    if (init_sem_available(semid, WRITE_SEM) == -1)
+        err_exit("init_sem_available-WRITE_SEM");
+    /* 初始化读者的信号量为 0 */
+    if (init_sem_in_use(semid, READ_SEM) == -1)
+        err_exit("init_sem_in_use-READ_SEM");
+
+    shmid = shmget(SHM_KEY, sizeof(struct shmseg), IPC_CREAT | OBJ_PERMS);
+    if (shmid == -1)
+        err_exit("shmget-SHM_KEY");
+
+    shmp = shmat(shmid, NULL, 0);
+    if (shmp == (void*) -1)
+        err_exit("shmat");
+
+    /* transfer blocks of data from stdin to shared memory */
+    for (xfrs = 0, bytes = 0;; xfrs++, bytes += shmp->cnt) {
+        /* wait for our turn */
+        if (reserve_sem(semid, WRITE_SEM) == -1)
+            err_exit("reserve semaphore");
+
+        shmp->cnt = read(STDIN_FILENO, shmp->buf, BUF_SIZE);
+        if (shmp->cnt == -1)
+            err_exit("read-STDIN_FILENO");
+
+        /* give reader a turn */
+        if (release_sem(semid, READ_SEM) == -1)
+            err_exit("release semaphore");
+
+        /* have we reached EOF? we test this after giving the reader a turn so that it
+         * can see the 0 value in shmp->cnt
+         * 这个 shmp->cnt 的判断必须要放在 release_sem 之后，因为如果判断 shmp->cnt 为 0 后，直接 break 跳出循环，
+         * 那么读进程将会一直阻塞在 READ_SEM 信号量上，而写进程也将一直阻塞在 WRITE_SEM 信号量上，形成死锁
+         */
+        if (shmp->cnt == 0)
+            break;
+    }
+
+    /* wait until reader has let us have one more turn. we then know
+     * reader has finished, and so we can delete the IPC objects
+     * 一直等待读进程增加 WRITE_SEM 信号量的值，唤醒写进程
+     */
+    if (reserve_sem(semid, WRITE_SEM) == -1)
+        err_exit("reserve semaphore");
+    if (semctl(semid, 0, IPC_RMID, dummy) == -1)
+        err_exit("semctl-IPC_RMID");
+    if (shmdt(shmp) == -1)
+        err_exit("shmdt");
+    if (shmctl(shmid, IPC_RMID, 0) == -1)
+        err_exit("shmctl-IPC_RMID");
+
+    fprintf(stderr, "sent %d bytes, (%d xfrs)\n", bytes, xfrs);
+    exit(EXIT_SUCCESS);
+}
+```
+
+读进程的代码如下：
+
+```c{.line-numbers}
+int main(int argc, char* argv[]) {
+
+    int semid, shmid, xfrs, bytes;
+    struct shmseg* shmp;
+
+    /* get ids for semaphore set and shared memory created by writer */
+    semid = semget(SEM_KEY, 0, 0);
+    if (semid == -1)
+        err_exit("semget-SEM_KEY");
+
+    shmid = shmget(SHM_KEY, 0, 0);
+    if (shmid == -1)
+        err_exit("shmget-SHM_KEY");
+
+    shmp = shmat(shmid, NULL, SHM_RDONLY);
+    if (shmp == (void*) -1)
+        err_exit("shmat");
+
+    /* transfer blocks of data from shared memory to stdout */
+    for (xfrs = 0, bytes = 0;; xfrs++) {
+        /* wait for our turn */
+        if (reserve_sem(semid, READ_SEM) == -1)
+            err_exit("reserve_sem-READ_SEM");
+
+        if (shmp->cnt == 0)
+            break;
+        bytes += shmp->cnt;
+
+        if (write(STDOUT_FILENO, shmp->buf, shmp->cnt) != shmp->cnt)
+            err_exit("partial/failed write");
+
+        /* give writer a turn */
+        if (release_sem(semid, WRITE_SEM) == -1)
+            err_exit("release semaphore");
+    }
+
+    if (shmdt(shmp) == -1)
+        err_exit("shmdt");
+
+    /* give writer one more turn, so it can clean up */
+    if (release_sem(semid, WRITE_SEM) == -1)
+        err_exit("release_semaphore-WRITE_SEM");
+
+    fprintf(stderr, "received %d bytes (%d xfrs)\n", bytes, xfrs);
+    exit(EXIT_SUCCESS);
+}
+```
+
+上述程序运行效果如下：
+
+```shell
+# writer 进程
+xuweilin@xvm:~/CLionProjects/http_parser/cmake-build-debug$ wc -c /etc/services 
+12813 /etc/services
+xuweilin@xvm:~/CLionProjects/http_parser/cmake-build-debug$ ./writer < /etc/services 
+sent 12813 bytes, (13 xfrs)
+
+# reader 进程
+xuweilin@xvm:~/CLionProjects/http_parser/cmake-build-debug$ ./reader > out.txt 
+received 12813 bytes (13 xfrs)
+xuweilin@xvm:~/CLionProjects/http_parser/cmake-build-debug$ diff /etc/services out.txt 
+```
+
+### 4.共享内存在虚拟内存中的位置
+
+如果遵循所推荐的方法，即让内核自行选择在何处附加共享内存段，那么（在 x86-32 架构上）内存布局就会像下图中所示的那样，段被附加在向上增长的堆和向下增长的栈之间未被分配的空间中，并且内存映射与共享库也是被放置在这个区域中。
+
+<div align="center">
+    <img src="System_V_IPC_之共享内存_static/5.png" width="350"/>
+</div>
+
+地址 0x40000000 被定义成了内核常量 **`TASK_UNMAPPED_BASE`**。通过将这个常量定义成一个不同的值并且重建内核可以修改这个地址的值。如果在调用 **`shmat()`**（或 **`mmap()`**）时采用了不推荐的方法，即显式地指定一个地址，那么一个共享内存段（或内存映射）可以被放置在低于 **`TASK_UNMAPPED_BASE`** 的地址处。
+
+### 5.在共享内存中存储指针
+
+每个进程都可能会用到不同的共享库和内存映射，并且可能会附加不同的共享内存段集。因此如果遵循推荐的做法，让内核来选择将共享内存段附加到何处，那么一个段在各个进程中可能会被附加到不同的地址上。**因此在共享内存段中存储指向段中其他地址的引用时应该使用（相对）偏移量，而不是（绝对）指针**。
+
+
+
+例如，假设一个共享内存段的起始地址为 baseaddr（即 baseaddr 的值为 shmat() 的返回值）。再假设需要在 p 指向的位置处存储一个指针，该指针指向的位置与 target 指向的位置相同。在 C 中，设置 *p 的传统做法如下所示：
+
+```c
+*p = target; /* place pointer in *p (WRONG) */
+```
+
+上面这段代码存在的问题是当共享内存段被附加到另一个进程中时 target 指向的位置可能会位于一个不同的虚拟地址处，这意味着在那个进程中那个策划中存储在 *p 中的值是是无意义的。正确的做法是在 *p 中存储一个偏移量。
+
+### 6.共享内存实例
 
 接下来，我们使用共享内存来实现一个多人聊天程序（群聊），大致的思想是一个服务器子进程在接收到客户端发送过来的数据时，会将这些数据保存到共享内存中，然后通知服务器其它子进程读取共享内存中的数据，并将这些数据发送给子进程监听的客户端，这样就实现了多人群聊功能。整个多人聊天程序的架构图如下所示：
 
