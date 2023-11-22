@@ -45,7 +45,7 @@ shmaddr 参数有如下几种参数：
 
 - 如果 **`shmaddr`** 是 NULL，那么段会被附加到内核所选择的一个合适的地址处；
 - 如果 **`shmaddr`** 不为 NULL 并且没有设置 **`SHM_RND`**，那么段会被附加到由 **`shmaddr`** 指定的地址处，它必须是系统分页大小的一个倍数（否则会发生 **`EINVAL`** 错误）；
-- 如果 shmaddr 不为 NULL 并且设置了 **`SHM_RND`**，那么段会被映射到的地址为在 shmaddr 中提供的地址被舍入到最近的常量 **`SHMLBA`** 的倍数。这个常量等于系统分页大小的某个倍数。**在 x86 架构上，`SHMLBA` 的值与系统分页大小是一样的**；
+- 如果 shmaddr 不为 NULL 并且设置了 **`SHM_RND`**，那么段会被映射到的地址为在 shmaddr 中提供的地址被舍入到最近的常量 **`SHMLBA`** 的倍数，即 [shm_addr - (shm_addr % SHMLBA)]，**`SHM_RND`** 标志的含义是圆整（round）。即将共享内存被关联的地址向下圆整到离 shm_addr 最近的 **`SHMLBA`** 的整数倍地址处。这个常量等于系统分页大小的某个倍数。**在 x86 架构上，`SHMLBA` 的值与系统分页大小是一样的**；
 
 不推荐将 shmaddr 设置为一个非 NULL 值，因为首先它降低了一个应用程序的可移植性（在一个 UNIX 系统上可用的地址在另外一个 UNIX 系统上不一定可用）；其次将一个共享内存段附加到一个正在使用中的特定地址处的操作会失败（比如有另外一个程序在该地址处附加了共享内存段或者创建了内存映射）。
 
@@ -269,7 +269,9 @@ xuweilin@xvm:~/CLionProjects/http_parser/cmake-build-debug$ diff /etc/services o
 
 每个进程都可能会用到不同的共享库和内存映射，并且可能会附加不同的共享内存段集。因此如果遵循推荐的做法，让内核来选择将共享内存段附加到何处，那么一个段在各个进程中可能会被附加到不同的地址上。**因此在共享内存段中存储指向段中其他地址的引用时应该使用（相对）偏移量，而不是（绝对）指针**。
 
-
+<div align="center">
+    <img src="System_V_IPC_之共享内存_static/6.png" width="300"/>
+</div>
 
 例如，假设一个共享内存段的起始地址为 baseaddr（即 baseaddr 的值为 shmat() 的返回值）。再假设需要在 p 指向的位置处存储一个指针，该指针指向的位置与 target 指向的位置相同。在 C 中，设置 *p 的传统做法如下所示：
 
@@ -277,9 +279,79 @@ xuweilin@xvm:~/CLionProjects/http_parser/cmake-build-debug$ diff /etc/services o
 *p = target; /* place pointer in *p (WRONG) */
 ```
 
-上面这段代码存在的问题是当共享内存段被附加到另一个进程中时 target 指向的位置可能会位于一个不同的虚拟地址处，这意味着在那个进程中那个策划中存储在 *p 中的值是是无意义的。正确的做法是在 *p 中存储一个偏移量。
+假设在进程 A 中，baseaddr 的值为 A，p 和 target 的绝对地址为 A + N、A + M，因此在 p 指向的共享内存位置处存储的值为 A + M（target 的绝对地址）。现在在进程 B 中，baseaddr 的值为 B，那么 *p 引用的地址（A + M）在进程 B 的地址空间中实际上是未知的。
 
-### 6.共享内存实例
+上面这段代码存在的问题是当共享内存段被附加到另一个进程中时 target 指向的位置可能会位于一个不同的虚拟地址处，这意味着在那个进程中那个策划中存储在 *p 中的值是是无意义的。正确的做法是在 *p 中存储一个偏移量，如下所示：
+
+```c
+/* place offset in *p */
+*p = (target - baseaddr);
+/* 在解引用这种指针时需要颠倒上面的步骤 */
+target = baseaddr + *p;
+```
+
+这里假设在各个进程中 baseaddr 指向共享内存段的起始位置（即各个进程中 shmat() 的返回值）。
+
+### 6.共享内存的操作
+
+shmctl() 系统调用在 shmid 标识的共享内存段上执行一组控制操作：
+
+```c{.line-numbers}
+#include <sys/shm.h>
+/* returns 0 on success, or -1 on error */
+int shmctl(int shmid, int cmd, struct shmid_ds* buf);
+```
+
+cmd 可以取如下的值：
+
+**1).`IPC_RMID`**
+
+标记这个共享内存段及其关联 **`shmid_ds`** 数据结构以便删除。如果当前没有进程附加该段，那么就会执行删除操作，否则就在所有进程都已经与该段分离（即当 **`shmid_ds`** 数据结构中 **`shm_nattch`** 字段的值为 0 时）之后再执行删除操作。
+
+在一些应用程序中可以通过在所有进程使用 **`shmat()`** 将共享内存段附加到其虚拟地址空间之后立即将共享内存段标记为删除来确保在应用程序退出时干净地清除共享内存段。根据 shmctl 的 man page：
+
+> *__If a segment has been marked for destruction, then the (nonstandard) SHM_DEST flag of the shm_perm.mode field in the associated data structure retrieved by IPC_STAT will be set.__*
+> **_The caller must ensure that a segment is eventually destroyed; otherwise its pages that were faulted in will remain in memory or swap_**.
+
+上面第二段话的意思是：The purpose of the second fragment is to remind you, that in a solution using shared memory you need to have some process mark it for destruction or it will remain in memory/swap forever. It might be good idea to use IPC_RMID immediately after creating segment. 假如有两个进程 A/B 附加了一个共享内存段 M，那么当 A/B 两个进程都终止时，会自动分离（detach）内存段 M，但是由于 M 没有被标记为删除，所以在 A/B 进程终止后，M 会继续保留在内存或者交换空间中。因此为了避免这种情况，A/B 中任一进程需要通过 shmctl 函数将内存段 M 标记为删除，在进程都退出之后（M 被两个进程分离），M 就会直接被删除掉。现在来解释 **`SHM_DEST`** 的含义，如果内存段 M 被一个进程标记为待删除，那么 **`SHM_DEST`** 字段就会被设置值。
+
+**2).`IPC_STAT`**
+
+将与这个共享内存段关联的 shmid_ds 数据结构的一个副本防止到 buf 指向的缓冲区中。
+
+**3).`IPC_SET`**
+
+使用 buf 指向的缓冲区中的值来更新与这个共享内存段相关联的 shmid_ds 数据结构中被选中的字段。
+
+**4).`SHM_LOCK/SHM_UNLOCK`**
+
+一个共享内存段可以被锁进 RAM 中，这样它就永远不会被交换出去了。这种做法能够带来性能上的提升，因为一旦段中的所有分页都驻留在内存中，就能够确保一个应用程序在访问分页时永远不会因发生缺页故障而被延迟。
+
+- **`SHM_LOCK`**：操作将一个共享内存段锁进内存；
+- **`SHM_UNLOCK`**：操作为共享内存段解锁以允许它被交换出去；
+
+锁住一个共享内存段无法确保在 shmctl() 调用结束时段的所有分页都驻留在内存中。非驻留分页会在附加该共享内存段的进程引用这些分页时因分页故障而一个一个地被锁进内存。一旦分页因分页故障而被锁进了内存，那么分页就会一直驻留在内存中直到被解锁为止，即使所有进程都与该段分离之后也不会发生改变。换句话说，**`SHM_LOCK`** 操作为共享内存段设置了一个属性，而不是为调用进程设置了一个属性，某一个调用进程退出之后并不影响此共享内存段的性质。
+
+### 7.共享内存关联的数据结构
+
+每个共享内存段都有一个关联的 shmid_ds 数据结构：
+
+```c{.line-numbers}
+struct shmid_ds {
+    struct ipc_perm shm_perm;        /* operation perms */
+    int     shm_segsz;               /* size of segment (bytes) */
+    time_t  shm_atime;               /* last shmat() time */
+    time_t  shm_dtime;               /* last shmdt() time */
+    time_t  shm_ctime;               /* last change time */
+    unsigned short  shm_cpid;        /* pid of creator */
+    unsigned short  shm_lpid;        /* pid of last shmat()/shmdt() */
+    short   shm_nattch;              /* no. of currently attached processes */
+};
+```
+
+除了常规的权限位之外，**`shm_perm.mode`** 字段还有两个只读位掩码标记。其中第一个是 **`SHM_DEST`**（销毁），它表示当所有进程的地址空间都与该段分离之后是否将该段标记为删除（通过 shmctl() **`IPC_RMID`** 操作）。另一个标记是 **`SHM_LOCKED`**，它表示是否将段锁进物理内存中（通过 shmctl() **`SHM_LOCK`** 操作）。
+
+### 8.共享内存实例
 
 接下来，我们使用共享内存来实现一个多人聊天程序（群聊），大致的思想是一个服务器子进程在接收到客户端发送过来的数据时，会将这些数据保存到共享内存中，然后通知服务器其它子进程读取共享内存中的数据，并将这些数据发送给子进程监听的客户端，这样就实现了多人群聊功能。整个多人聊天程序的架构图如下所示：
 
