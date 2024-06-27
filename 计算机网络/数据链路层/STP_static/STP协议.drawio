@@ -1,0 +1,103 @@
+<mxfile host="Electron" modified="2024-05-06T14:13:09.981Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.2.8 Chrome/112.0.5615.165 Electron/24.2.0 Safari/537.36" etag="XYQu10bpLfRWUYE4ML3r" version="21.2.8" type="device">
+  <diagram name="第 1 页" id="j9mKrXMAhqu4bqk4Q7H2">
+    <mxGraphModel dx="714" dy="373" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3300" pageHeight="4681" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-1" target="Xr1yMooDmv1AeFiYVpJU-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-1" value="&lt;b&gt;RPC 相同&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="490" y="110" width="90" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-2" target="Xr1yMooDmv1AeFiYVpJU-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-6" value="&lt;b&gt;BID相同&lt;/b&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="Xr1yMooDmv1AeFiYVpJU-5">
+          <mxGeometry x="-0.7764" y="-2" relative="1" as="geometry">
+            <mxPoint x="37" y="-2" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-2" target="Xr1yMooDmv1AeFiYVpJU-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-9" value="&lt;b&gt;BID不同&lt;/b&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="Xr1yMooDmv1AeFiYVpJU-8">
+          <mxGeometry x="0.2594" y="-1" relative="1" as="geometry">
+            <mxPoint x="18" y="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-2" value="&lt;b&gt;比较上行设备的 BID&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="437.5" y="180" width="195" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-4" value="&lt;b&gt;比较上行设备的 PID，较小的座位根端口&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="730" y="192.5" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-7" value="&lt;b&gt;所连上行设备的 BID 较小的作为根端口&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="190" y="192.5" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-12" target="Xr1yMooDmv1AeFiYVpJU-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-12" value="&lt;b&gt;RPC 相同&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="492" y="339" width="90" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-17" target="Xr1yMooDmv1AeFiYVpJU-18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-14" value="&lt;b&gt;BID小&lt;/b&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="Xr1yMooDmv1AeFiYVpJU-13">
+          <mxGeometry x="-0.7764" y="-2" relative="1" as="geometry">
+            <mxPoint x="23" y="-1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-17" target="Xr1yMooDmv1AeFiYVpJU-19">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-16" value="&lt;b&gt;BID大&lt;/b&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="Xr1yMooDmv1AeFiYVpJU-15">
+          <mxGeometry x="0.2594" y="-1" relative="1" as="geometry">
+            <mxPoint x="14" y="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-27" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-17" target="Xr1yMooDmv1AeFiYVpJU-24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-17" value="&lt;b&gt;比较交换机的 BID&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="439.5" y="409" width="195" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-18" value="&lt;b&gt;端口作为指定端口&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="699" y="423.75" width="109" height="39.5" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-19" value="&lt;b&gt;端口作为备用端口&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="266" y="423.75" width="113" height="40.5" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-24" target="Xr1yMooDmv1AeFiYVpJU-25">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-21" value="&lt;b&gt;PID小&lt;/b&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="Xr1yMooDmv1AeFiYVpJU-20">
+          <mxGeometry x="-0.7764" y="-2" relative="1" as="geometry">
+            <mxPoint x="23" y="-1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="Xr1yMooDmv1AeFiYVpJU-24" target="Xr1yMooDmv1AeFiYVpJU-26">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-23" value="&lt;b&gt;PID大&lt;/b&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="Xr1yMooDmv1AeFiYVpJU-22">
+          <mxGeometry x="0.2594" y="-1" relative="1" as="geometry">
+            <mxPoint x="14" y="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-24" value="&lt;b&gt;比较交换机的 PID&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="439.5" y="521" width="195" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-25" value="&lt;b&gt;端口作为指定端口&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="699" y="535.75" width="109" height="39.5" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-26" value="&lt;b&gt;端口作为备用端口&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="266" y="535.75" width="113" height="40.5" as="geometry" />
+        </mxCell>
+        <mxCell id="Xr1yMooDmv1AeFiYVpJU-28" value="&lt;b&gt;BID 相等&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="536" y="484" width="66" height="26" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
