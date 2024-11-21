@@ -530,7 +530,7 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
 
         // isLineBased判断分隔符是否是\r\n和\n
         if (isLineBased(delimiters) && !isSubclass()) {
-            // 如果分割符全部是基于行的分割符，那么就将lineBasedDecoder初始化为LineBasedFrameDecoder
+            // 如果分割符全部是基于行的分割符，那么就将 lineBasedDecoder 初始化为 LineBasedFrameDecoder
             lineBasedDecoder = new LineBasedFrameDecoder(maxFrameLength, stripDelimiter, failFast);
             this.delimiters = null;
         } else {
@@ -556,8 +556,8 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
          * 2.找到离readerIndex距离最小分割符 ... byte byte byte byte A byte byte byte B ... 
          *                        |                 |                | 
          *                   readerIndex         分隔符1           分隔符2
-         * 下面这段代码的功能就是分别计算从readerIndex到分隔符1，分隔符2，...，分隔符N的距离，然后
-         * 从中选出距离最小的分隔符，在上面的例子中，就是分割符1
+         * 下面这段代码的功能就是分别计算从 readerIndex 到分隔符 1，分隔符 2，...，分隔符 N 的距离，然后
+         * 从中选出距离最小的分隔符，在上面的例子中，就是分割符 1
          */
         int minFrameLength = Integer.MAX_VALUE;
         ByteBuf minDelim = null;
@@ -569,7 +569,7 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
             }
         }
 
-        // 3.解码，和行解码器LineBasedFrameDecoder中decode方法的逻辑相似，都是由丢弃模式与非丢弃模式，
+        // 3.解码，和行解码器 LineBasedFrameDecoder 中 decode 方法的逻辑相似，都是由丢弃模式与非丢弃模式，
         // 以及有没有距离最小的分隔符这几种情况的组合
         // 如果没有找到最小距离的解码器
         if (minDelim != null) {
@@ -823,7 +823,7 @@ if (frameLength > maxFrameLength) {
         // 当前可读字节已达到frameLength，直接跳过frameLength个字节，丢弃之后，后面有可能就是一个合法的数据包
         in.skipBytes((int) frameLength);
     } else {
-        // 当前可读字节未达到frameLength，说明后面未读到的字节也需要丢弃，进入丢弃模式，先把当前累积的字节全部丢弃
+        // 当前可读字节未达到 frameLength，说明后面未读到的字节也需要丢弃，进入丢弃模式，先把当前累积的字节全部丢弃
         discardingTooLongFrame = true;
         // bytesToDiscard表示还需要丢弃多少字节
         bytesToDiscard = discard;
@@ -843,13 +843,13 @@ private void failIfNecessary(boolean firstDetectionOfTooLongFrame) {
         long tooLongFrameLength = this.tooLongFrameLength;
         this.tooLongFrameLength = 0;
         discardingTooLongFrame = false;
-        // 如果没有设置快速失败，或者设置了快速失败并且是第一次检测到大包错误，抛出异常，让handler去处理
+        // 如果没有设置快速失败，或者设置了快速失败并且是第一次检测到大包错误，抛出异常，让 handler 去处理
         if (!failFast ||
             firstDetectionOfTooLongFrame) {
             fail(tooLongFrameLength);
         }
     } else {
-        // 如果设置了快速失败，并且是第一次检测到打包错误，抛出异常，让handler去处理
+        // 如果设置了快速失败，并且是第一次检测到打包错误，抛出异常，让 handler 去处理
         if (failFast && firstDetectionOfTooLongFrame) {
             fail(tooLongFrameLength);
         }
@@ -930,3 +930,4 @@ protected ByteBuf extractFrame(ChannelHandlerContext ctx, ByteBuf buffer, int in
     return buffer.retainedSlice(index, length);
 } 
 ```
+
