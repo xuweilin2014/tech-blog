@@ -337,7 +337,248 @@ flushAppendOnlyFile 函数的行为由服务器配置的 appendfsync 选项的�
 - **`Everysec`**: 将 aof_buf 缓冲区中的所有内容写入到 AOF 文件，如果上次同步 AOF 文件的时间距离现在超过一秒钟，那么再次对 AOF 文件进行同步。
 - **`No`**: 将 aof_buf 缓冲区中的所有内容写入到 AOF 文件，但是并不对 AOF 文件进行同步，何时同步由操作系统来决定。
 
-这里，要讲解一下操作系统中的**<font color="red">写入与同步(将保存在缓冲区中的数据强制刷新到磁盘中) 概念</font>**。为了提高文件的写入效率，在现代操作系统中，当用户调用 write 函数，将一些数据写入到文件的时候，操作系统会暂时将写入数据保存在一个内存缓冲区中，等到缓存区被填满，或者超过有限的时间之后，才真正的将缓冲区中的数据写入到磁盘里面。
+这里，要讲解一下操作系统中的 **<font color="red">写入与同步(将保存在缓冲区中的数据强制刷新到磁盘中) 概念</font>**。为了提高文件的写入效率，在现代操作系统中，当用户调用 write 函数，将一些数据写入到文件的时候，操作系统会暂时将写入数据保存在一个内存缓冲区中，等到缓存区被填满，或者超过有限的时间之后，才真正的将缓冲区中的数据写入到磁盘里面。
 
 这种做法虽然提高了效率，但也为写入数据带来了安全问题，如果计算机发生了停机，那么保存在内存缓冲区里面的写入数据将会丢失。为此，系统提供了 fsync 和 fdatasync 两个同步函数，他们可以强制让操作系统立即将缓冲区中的数据写入到硬盘里面，从而确保写入数据的安全性。
 
+### 3.AOF 文件的载入与还原
+
+Redis 读取 AOF 文件并且还原数据库状态的详细步骤如下：
+
+1. 创建一个不带网络连接的伪客户端：服务器使用没有网络连接的无客户端来执行 AOF 文件保存的写命令，伪客户端执行命令的效果和带网络连接的客户端执行命令的效果完全一样
+2. 从 AOF 文件中分析并且读出一条写命令
+3. 使用伪客户端执行被读出的写命令
+
+一直执行步骤 2 和步骤 3，直到 AOF 文件中的所有写命令都被处理完毕为止。
+
+### 4.AOF 文件格式解析
+
+在客户端上执行一些命令后，打开 AOF 文件，可以观察到有对应的操作的记录日志。
+
+<div align="center">
+    <img src="redis_static//6.png" width="260"/>
+</div>
+
+文件解析说明：
+
+- **`*，表示命令的参数个数，例如 set a 1 是三个参数，所以是 *3`**
+- **`$，表示参数的字节数，例如 set 这个参数是三字节，所以是 $3，key 值 a 是一个字节，所以是$1`**
+- **`无符号，表示是参数的数据，例如 set,a,1 就是具体的数据`**
+
+### 5.AOF 文件的重写
+
+#### 5.1 AOF 文件重写的实现
+
+AOF 虽然比 RDB 更可靠，但缺点也是比较明显的，就是每次写操作都要把操作日志写到文件上，这样会导致文件非常冗余。
+
+假若你要自增一个计数器 100 次，如果不重写，AOF 文件就就会有这 100 次的自增记录，如 INCR a。如果执行了日志重写，那么文件只会保留 set a 100 而不是 100 条 INCR a。除了这个例子之外，其他所有类型的键都可以用同样的方法去减少 AOF 文件中命令的数量，首先从数据库中读取键现在的值，然后用一条命令去记录键值对，代替之前记录这个键值对的多条命令。这就是 AOF 实现的原理，因为 aof_rewrite 函数新生成的 AOF 文件只包含还原当前数据库状态所必须的命令，所以 AOF 文件不会浪费任何硬盘空间。
+
+这样拥有相同的结果，但可以大大减少 AOF 的文件大小，并且可以让 AOF 载入的时候提升载入的效率。为了处理这种情况，Redis 支持一种有趣的特性： 可以在不打断服务客户端的情况下， 对 AOF 文件进行重建（rebuild）。执行 **<font color="red">BGREWRITEAOF</font>** 命令， Redis 将生成一个新的 AOF 文件， 这个文件包含重建当前数据集所需的最少命令。
+
+另外，在实际中，为了避免在后来使用 AOF 文件恢复数据库时，执行 AOF 中的命令时造成客户端输入缓冲区溢出，重写程序在处理列表时、哈希表、集合、有序集合这四种可能会带有多个元素的键时，会先检查键所包含的元素数量，如果元素的数量超过了 REDIS_AOF_REWRITE_ITEMS_PER_CMD 常量的值，那么重写程序将使用多条命令来记录键的值，而不是单单使用一条命令。
+
+看回 redis.conf 配置，有两项控制 rewrite 的选项。
+
+<div align="center">
+    <img src="redis_static///7.png" width="450"/>
+</div>
+
+- auto-aof-rewrite-percentage 100，当文件增长 100%（一倍）时候，自动重写。
+- auto-aof-rewrite-min-size 64mb，日志重写最小文件大小，如果小于该大小，不会自动重写。
+
+值得注意的是，重写 AOF 文件的操作，并没有读取旧的 aof 文件，而是将整个内存中的数据库内容用命令的方式重写了一个新的 aof 文件，这点和快照有点类似。AOF 重写并不需要对原有 AOF 文件进行任何的读取，写入，分析等操作，这个功能是通过读取服务器当前的数据库状态来实现的。
+
+```java{.line-numbers}
+# 假设服务器对键 list 执行了以下命令 s;
+127.0.0.1:6379> RPUSH list "A" "B"
+(integer) 2
+127.0.0.1:6379> RPUSH list "C"
+(integer) 3
+127.0.0.1:6379> RPUSH list "D" "E"
+(integer) 5
+127.0.0.1:6379> LPOP list
+"A"
+127.0.0.1:6379> LPOP list
+"B"
+127.0.0.1:6379> RPUSH list "F" "G"
+(integer) 5
+127.0.0.1:6379> LRANGE list 0 -1
+1) "C"
+2) "D"
+3) "E"
+4) "F"
+5) "G"
+127.0.0.1:6379> 
+```
+
+当前列表键 list 在数据库中的值就为 ["C", "D", "E", "F", "G"]。要使用尽量少的命令来记录 list 键的状态，最简单的方式不是去读取和分析现有 AOF 文件的内容，而是直接读取 list 键在数据库中的当前值，然后用一条 RPUSH list "C" "D" "E" "F" "G" 代替前面的 6 条命令。
+
+#### 5.2 AOF 后台重写
+
+AOF 重写程序 aof_rewrite 函数可以很好地完成创建一个新 AOF 文件的任务，但是，因为这个函数会进行大量的写入操作，所以调用这个函数的线程将被长时间阻塞，在此期间服务器将无法处理客户端发来的命令请求。所以，考虑到这种情况，Redis 将 AOF 重写程序放到子进程中执行。不过，当子进程在重写 AOF 文件的时候，可能父进程收到客户端的命令对数据库进行修改，造成子进程重写的 AOF 文件与数据库状态不一致的情况。
+
+为了解决这个情况，Redis 服务器设置了一个 AOF 重写缓冲区。AOF 执行重写的步骤如下：
+
+- 当 Redis 服务器执行完一个写命令之后，它会同时将这个写命令发送给 AOF 缓冲区以及 AOF 重写缓冲区。这样可以保证：
+  - AOF 缓冲区中的内容可以被定期写入和同步到 AOF 文件，对现有 AOF 文件的处理工作会如常进行
+  - **<font color="red">从创建子进程开始，服务器执行的所有写命令都会被记录到 AOF 重写缓冲区中</font>**
+- 子进程完成 AOF 重写工作之后，向父进程发送一个信号
+- 父进程接收到信号后，首先会将 AOF 重写缓冲区中的所有内容写入到新 AOF 文件中，这时新 AOF 文件所保存的数据库状态和服务器当前的数据库状态一致
+- 父进程原子地使用新的 AOF 文件替换旧的 AOF 文件
+
+接下来，父进程就可以向往常一样接收命令请求了。
+
+### 6.AOF 文件损坏
+
+在写入 aof 日志文件时，如果 Redis 服务器宕机，则 aof 日志文件文件会出格式错误，在重启 Redis 服务器时，Redis 服务器会拒绝载入这个 aof 文件，可以通过以下步骤修复 aof 并恢复数据。
+
+1. 备份现在 aof 文件，以防万一。
+2. 使用 redis-check-aof 命令修复 aof 文件，该命令格式如下：
+
+```java{.line-numbers}
+# 修复aof日志文件
+$ redis-check-aof -fix file.aof 
+```
+
+3. 重启 Redis 服务器，加载已经修复的 aof 文件，恢复数据。
+
+## 四、RDB 与 AOF 混合持久化
+
+细细想来 **<font color="red">aofrewrite 时也是先写一份全量数据到新 AOF 文件中再追加增量( 也就是前面说的子进程先重写数据库状态，再由父进程将 AOF 重写缓冲区中的内容写入到新 AOF 文件)</font>**，只不过全量数据是以 redis 命令的格式写入。那么是否可以先以 RDB 格式写入全量数据再追加增量日志呢这样既可以提高 aofrewrite 和恢复速度也可以减少文件大小还可以保证数据的完毕性整合 RDB 和 AOF 的优点那么现在 4.0 实现了这一特性——RDB-AOF 混合持久化。
+
+### 1.aofrewrite
+
+RDB-AOF 混合持久化体现在 aofrewrite 时那么我们就从这里开始来看 4.0 是如何实现的。回忆下 aofrewrite 的过程：
+
+无论是 serverCron 触发或者执行 BGREWRITEAOF 命令最终 redis 都会走到 rewriteAppendOnlyFileBackground()。rewriteAppendOnlyFileBackground 函数会 fork 子进程子进程进入 rewriteAppendOnlyFile 函数来生成新的 AOF 文件混合持久化就从这里开始。
+
+```java{.line-numbers}
+int rewriteAppendOnlyFile(char *filename) {
+    ...
+    if (server.aof_use_rdb_preamble) {
+        int error;
+        if (rdbSaveRio(&aof,&error,RDB_SAVE_AOF_PREAMBLE,NULL) == C_ERR) {
+            errno = error;
+            goto werr;
+        }
+    } else {
+        if (rewriteAppendOnlyFileRio(&aof) == C_ERR) goto werr;
+    }
+    ...
+} 
+```
+
+可以看到当混合持久化开关 **<font color="red">aof_use_rdb_preamble<</font>** 打开时就会进入 rdbSaveRio 函数先以 RDB 格式来保存全量数据，前文说道子进程在做 aofrewrite 时会通过管道从父进程读取增量数据并缓存下来，那么在以 RDB 格式保存全量数据时也会从管道读取数据并不会造成管道阻塞。
+
+在 rdbSaveRio 函数中，首先把 RDB 的版本 (注意不是 redis 的版本) 和辅助域写入文件。
+
+```java{.line-numbers}
+int rdbSaveRio(rio *rdb, int *error, int flags, rdbSaveInfo *rsi) {
+    ...
+    snprintf(magic,sizeof(magic),"REDIS%04d",RDB_VERSION);
+    if (rdbWriteRaw(rdb,magic,9) == -1) goto werr;
+    if (rdbSaveInfoAuxFields(rdb,flags,rsi) == -1) goto werr; 
+```
+
+然后遍历 DB 先把 SELECTDB 操作码、被选中数据库的 dbnum、db_size 以及 expires_size 写入文件。
+
+```java{.line-numbers}
+for (j = 0; j < server.dbnum; j++) {
+    redisDb *db = server.db+j;
+    dict *d = db->dict;
+    if (dictSize(d) == 0) continue;
+    di = dictGetSafeIterator(d);
+    if (!di) return C_ERR;
+
+    /* Write the SELECT DB opcode */
+    if (rdbSaveType(rdb,RDB_OPCODE_SELECTDB) == -1) goto werr;
+    if (rdbSaveLen(rdb,j) == -1) goto werr;
+
+    /* Write the RESIZE DB opcode. We trim the size to UINT32_MAX, which
+     * is currently the largest type we are able to represent in RDB sizes.
+     * However this does not limit the actual size of the DB to load since
+     * these sizes are just hints to resize the hash tables. */
+    uint32_t db_size, expires_size;
+    db_size = (dictSize(db->dict) <= UINT32_MAX) ?
+                            dictSize(db->dict) :
+                            UINT32_MAX;
+    expires_size = (dictSize(db->expires) <= UINT32_MAX) ?
+                            dictSize(db->expires) :
+                            UINT32_MAX;
+    if (rdbSaveType(rdb,RDB_OPCODE_RESIZEDB) == -1) goto werr;
+    if (rdbSaveLen(rdb,db_size) == -1) goto werr;
+    if (rdbSaveLen(rdb,expires_size) == -1) goto werr; 
+```
+
+在当前 DB 中遍历所有的 key 把 key-value 对及过期时间如果有设置的话写入文件。这里提一下在 rdbSaveKeyValuePair 函数中会判断 expire 是否已经到了过期时间如果已经过期就不会写入文件。同时如果 flags 标记了 RDB_SAVE_AOF_PREAMBLE 的话说明是在 aofrewrite 且开启了 RDB-AOF 混合开关此时就会从父进程去读取增量数据了。
+
+```java{.line-numbers}
+
+while((de = dictNext(di)) != NULL) {
+           sds keystr = dictGetKey(de);
+           robj key, *o = dictGetVal(de);
+           long long expire;
+
+           initStaticStringObject(key,keystr);
+           expire = getExpire(db,&key);
+           if (rdbSaveKeyValuePair(rdb,&key,o,expire,now) == -1) goto werr;
+
+           /* When this RDB is produced as part of an AOF rewrite, move
+            * accumulated diff from parent to child while rewriting in
+            * order to have a smaller final write. */
+           if (flags & RDB_SAVE_AOF_PREAMBLE &&
+               rdb->processed_bytes > processed+AOF_READ_DIFF_INTERVAL_BYTES)
+           {
+               processed = rdb->processed_bytes;
+               aofReadDiffFromParent();
+           }
+       }
+       dictReleaseIterator(di);
+   }
+   di = NULL; /* So that we don't release it again on error. */ 
+```
+
+### 2.数据恢复
+
+- 当 appendonly 配置项为 no 时 redis 启动后会去加载 RDB 文件以 RDB 格式来解析 RDB 文件自然没有问题。
+- 当 appendonly 配置项为 yes 时 redis 启动后会加载 AOF 文件来恢复数据，如果持久化时开启了 RDB-AOF 混合开关那么 AOF 文件的前半段就是 RDB 格式，此时要如何正确加载数据呢
+
+一切数据都逃不过协议二字，不以正确的协议存储和解析，那就是乱码。既然允许 RDB-AOF 混合持久化就要能够识别并恢复数据这一节我们来介绍如何以正确的姿势来恢复数据。加载 AOF 文件的入口为 loadAppendOnlyFile。
+
+```java{.line-numbers}
+int loadAppendOnlyFile(char *filename) {
+    ...
+    /* Check if this AOF file has an RDB preamble. In that case we need to
+     * load the RDB file and later continue loading the AOF tail. */
+    char sig[5]; /* "REDIS" */
+    if (fread(sig,1,5,fp) != 5 || memcmp(sig,"REDIS",5) != 0) {
+        /* No RDB preamble, seek back at 0 offset. */
+        if (fseek(fp,0,SEEK_SET) == -1) goto readerr;
+    } else {
+        /* RDB preamble. Pass loading the RDB functions. */
+        rio rdb;
+
+        serverLog(LL_NOTICE,"Reading RDB preamble from AOF file...");
+        if (fseek(fp,0,SEEK_SET) == -1) goto readerr;
+        rioInitWithFile(&rdb,fp);
+        if (rdbLoadRio(&rdb,NULL) != C_OK) {
+            serverLog(LL_WARNING,"Error reading the RDB preamble of the AOF file, AOF loading aborted");
+            goto readerr;
+        } else {
+            serverLog(LL_NOTICE,"Reading the remaining AOF tail...");
+        }
+    }
+    ...
+} 
+```
+
+打开 AOF 文件之后首先读取 5 个字符如果是"REDIS"，那么就说明这是一个混合持久化的 AOF 文件。正确的 RDB 格式一定是以"REDIS" 开头，而纯 AOF 格式则一定以"*" 开头，此时就会进入 rdbLoadRio 函数来加载数据。rdbLoadRio 函数此处就不详细展开了就是以约定好的协议解析文件内容，直至遇到 RDB_OPCODE_EOF 结束标记，返回 loadAppendOnlyFile 函数继续以 AOF 格式解析文件直到结束，整个加载过程完成。
+
+### 3.总结
+
+在过去， Redis 用户通常会因为 RDB 持久化和 AOF 持久化之间不同的优缺点而陷入两难的选择当中：
+
+- RDB 持久化能够快速地储存和回复数据，但是在服务器停机时却会丢失大量数据；
+- AOF 持久化能够有效地提高数据的安全性，但是在储存和恢复数据方面却要耗费大量的时间。
+
+为了让用户能够同时拥有上述两种持久化的优点， Redis 4.0 推出了一个能够"鱼和熊掌兼得"的持久化方案 —— RDB-AOF 混合持久化：这种持久化能够通过 AOF 重写操作创建出一个同时包含 RDB 数据和 AOF 数据的 AOF 文件， 其中 RDB 数据位于 AOF 文件的开头， 它们储存了服务器开始执行AOF重写操作时的数据库状态，至于那些在重写操作执行之后执行的 Redis 命令， 则会继续以 AOF 格式追加到 AOF 文件的末尾，也即是 RDB 数据之后。
