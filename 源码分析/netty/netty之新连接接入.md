@@ -107,7 +107,7 @@ public void read() {
 }
 ```
 
-可以看到，一上来，就用一条断言确定该 read 方法必须是 reactor 线程调用，然后拿到 channel 对应的 pipeline 和 RecvByteBufAllocator.Handle( 先不解释)。接下来，调用 doReadMessages 方法不断地读取消息，用 readBuf 作为容器，这里，其实可以猜到读取的是一个个连接，然后调用 pipeline.fireChannelRead()，将每条新连接经过一层服务端 channel 的洗礼。
+可以看到，一上来，就用一条断言确定该 read 方法必须是 reactor 线程调用，然后拿到 channel 对应的 pipeline 和 RecvByteBufAllocator.Handle (先不解释)。接下来，调用 doReadMessages 方法不断地读取消息，用 readBuf 作为容器，这里，其实可以猜到读取的是一个个连接，然后调用 pipeline.fireChannelRead()，将每条新连接经过一层服务端 channel 的洗礼。
 
 之后清理容器，触发 pipeline.fireChannelReadComplete()，整个过程清晰明了，不含一丝杂质，下面我们具体看下这两个方法：
 

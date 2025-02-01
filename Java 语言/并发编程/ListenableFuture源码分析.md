@@ -68,3 +68,58 @@ class Task implements Callable<String> {
 
 在上面的代码中，future2.addListener 和 Futures.addCallback 都是注册回调的方法，在本质上是一样的，对于 Futures.addCallback，也是把 FutureCallback 对象封装成一个 Listener，然后调用 addListener 方法，从而添加到 future 中的 Listener 链表里面。
 
+## 3.源码分析
+
+在上面的示例代码中，首先将 ThreadPoolExecutor 封装成一个 MoreExecutors.listeningDecorator，源码如下：
+
+```java{.line-numbers}
+private static class ListeningDecorator extends AbstractListeningExecutorService {
+
+    private final ExecutorService delegate;
+    
+    //MoreExecutors.listeningDecorator就是包装了一下ThreadPoolExecutor，目的是为了使用ListenableFuture
+    //这里的delegate其实就是ThreadPoolExecutor
+    ListeningDecorator(ExecutorService delegate) {
+        this.delegate = checkNotNull(delegate);
+    }
+    
+    //重写了execute，不过还是直接调用ThreadPoolExecutor里面的execute
+    @Override
+    public final void execute(Runnable command) {
+        delegate.execute(command);
+    }
+} 
+```
+
+ListeningDecorator 的继承关系结构如下所示：
+
+<div align="center">
+    <img src="ListenableFuture_static//1.png" width="580"/>
+</div>
+
+这里的 delegate 就是 ThreadPoolExecutor，另外虽然还重写了 execute，不过还是直接调用 ThreadPoolExecutor 里面的 execute。这样一个执行器就被 new 出来了，现在需要往里面放任务了。
+
+接下来就是调用 submit 方法，往线程池中去提交任务了。由于 ListeningDecorator 继承了 AbstractListeningExecutorService 类，因此，会调用其父类的 submit 方法：
+
+```java{.line-numbers}
+//在Test中，pool.submit(task1)，往线程池中提交任务时，就会调用下面的submit方法，
+//然后调用父类的submit方法
+//class:AbstractListeningExecutorService
+@Override
+public <T> ListenableFuture<T> submit(Callable<T> task) {
+    return (ListenableFuture<T>) super.submit(task);
+} 
+```
+
+接着调用 AbstractExecutorService 中的 submit 方法：
+
+```java{.line-numbers}
+public <T> Future<T> submit(Callable<T> task) {
+    if (task == null) throw new NullPointerException();
+    RunnableFuture<T> ftask = newTaskFor(task);
+    execute(ftask);
+    return ftask;
+} 
+```
+
+在上面的 submit 方法中，会调用我们在 AbstractListeningExecutorService 中重写的 newTaskFor 方法：
