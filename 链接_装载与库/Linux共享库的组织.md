@@ -374,8 +374,227 @@ lrwxrwxrwx  1 root root       33  1月 29  2025 libanl.so -> /lib/x86_64-linux-g
 -rw-r--r--  1 root root    14432  1月 29  2025 libanl.so.1
 ```
 
+下面分别是链接时，链接器将共享库的 **`SONAME`** 写入可执行程序 **`DT_NEEDED`** 的过程，以及运行时动态加载器根据可执行程序中的 SONAME 找到真实共享库并加载的过程。
+
+```c{.line-numbers}
+编译期：
+  -lanl
+    └─ 找到开发期名：/usr/lib/i386-linux-gnu/libanl.so 或 /lib32/libanl.so
+        └─ 链接器读取 SONAME = "libanl.so.1"
+            └─ 在产物中写入 NEEDED: libanl.so.1
+
+运行期：
+  动态装载器读取 NEEDED: libanl.so.1
+    └─ 在 /lib32/ 或 /lib/x86_64-linux-gnu/ 中找到 libanl.so.1（真实文件）
+        └─ 加载成功
+```
+
 ## 3.共享库的查找过程
 
-### 3.1 共享库的系统路径
+### 3.1 ldconfig 命令
 
+ldconfig creates the necessary links and cache to the most recent shared libraries found **<font color="red">in the directories specified on the command line, in the file `/etc/ld.so.conf`, and in the trusted directories, `/lib` and `/usr/lib`</font>**. On some 64-bit architectures such as x86-64, **`/lib`** and **`/usr/lib`** are the trusted directories for 32-bit libraries, while **`/lib64`** and **`/usr/lib64`** are used for 64-bit libraries.
+
+扫描命令行给出的目录、**`/etc/ld.so.conf`**（含其 **`*.conf`** 包含项）以及受信任目录（常见是 **`/lib`**、**`/usr/lib`**；在 64 位系统上，32 位/64 位分别对应 **`/lib`**、**`/usr/lib`** 与 **`/lib64`**、**`/usr/lib64`**），据此重建 **`/etc/ld.so.cache`**。这个缓存是运行时动态链接器 **`ld.so/ld-linux.so`** 查库时用的"索引"，能显著加速查找。
+
+The cache is used by the run-time linker, ld.so or ld-linux.so. ldconfig checks the header and filenames of the libraries it encounters when determining which versions should have their links updated. ldconfig should normally be run by the superuser as it may require write permission on some root owned directories and files.
+
+只处理名字形如 **`lib*.so*`**（普通共享库）和 **`ld-*.so*`**（动态链接器本体）。ldconfig 会据此把"同一 SONAME 中最新"的版本设为目标，必要时更新软链接。
+
+ldconfig will look only at files that are named lib*.so* (for regular shared objects) or ld-*.so* (for the dynamic loader itself).  Other files will be ignored.  Also, ldconfig expects a certain pattern to how the symbolic links are set up, like this example, where the middle file (libfoo.so.1 here) is the SONAME for the library:
+
+```c{.line-numbers}
+libfoo.so -> libfoo.so.1 -> libfoo.so.1.12
+```
+
+ldconfig 影响的是运行时找库，它不改变编译/链接期的 **`-L/-l`** 行为，运行期搜索顺序与 **`ld.so`** 规则相关，**`/etc/ld.so.cache`** 就是其中关键一环。如果希望安装/升级/移动共享库之后，希望程序无需设置 **`LD_LIBRARY_PATH`** 就能在新路径找到库，可以把共享库所在目录的路径写到 **`/etc/ld.so.conf`** 中，然后 **`sudo ldconfig`** 即可。可以使用 **`ldconfig -p`** 来查看当前缓存里有哪些库与目录。
+
+**`ldconfig -n DIR`** 命令表示只处理命令行上给出的目录 DIR 来更新 SONAME 链，不扫描受信任目录（如 **`/lib`**、**`/usr/lib`**），也不读取 **`/etc/ld.so.conf`**，并且隐含 -N，即不重建全局缓存 **`/etc/ld.so.cache`**。
+
+#### 3.1.1 ldconfig 遇到多个相同 SONAME 的库
+
+ldconfig 在遇到多个提供相同 SONAME 的库时，会在该目录内选择版本号更高的那个，并建立/更新 SONAME 链接。版本号更低的共享库会保留在目录中，但不再是 SONAME 的指向目标。
+
+```shell{.line-numbers}
+# 1.创建一个共享库 libfoo.so.1.2.3，其 SONAME 为 libfoo.so.1
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc -shared hello.o -o libfoo.so.1.2.3 -Wl,-soname,libfoo.so.1 
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ readelf -d libfoo.so.1.2.3 | grep soname
+ 0x000000000000000e (SONAME)             Library soname: [libfoo.so.1]
+
+# 2.创建一个共享库 libfoo.so.2.3.4，其 SONAME 也为 libfoo.so.1
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc -shared hello.o -o libfoo.so.2.3.4 -Wl,-soname,libfoo.so.1 
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ readelf -d libfoo.so.2.3.4 | grep soname
+ 0x000000000000000e (SONAME)             Library soname: [libfoo.so.1]
+
+# 3.当前目录 ~/linkers_loaders/tmp/soname-demo 也在 /etc/ld.so.conf 文件中
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ cat /etc/ld.so.conf
+include /etc/ld.so.conf.d/*.conf
+/home/monica/software/linux_dir/dynamic_lib/lib
+/usr/local/lib
+/home/monica/linkers_loaders/tmp/soname-demo
+
+# 4.使用命令 ldconfig 来更新扫描 /etc/ld.so.conf 以及受信任目录中的共享库 SONAME 链接，并且更新 /etc/ld.so.cache
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ sudo ldconfig
+
+# 5.ls -l 命令的结果显示 ldconfig 为版本号更高的那个共享库建立 SONAME 链接
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ ls -l
+总用量 76
+-rwxrwxr-x 1 monica monica 15952  9月 25 23:27 app
+-rw-rw-r-- 1 monica monica    73  9月 25 21:34 hello.c
+-rw-rw-r-- 1 monica monica  1504  9月 25 22:58 hello.o
+lrwxrwxrwx 1 root     root    15  9月 26 22:28 libfoo.so.1 -> libfoo.so.2.3.4
+-rwxrwxr-x 1 monica monica 15568  9月 26 22:27 libfoo.so.1.2.3
+-rwxrwxr-x 1 monica monica 15568  9月 26 22:28 libfoo.so.2.3.4
+lrwxrwxrwx 1 monica monica    13  9月 25 22:58 libhello.so -> libhello.so.2
+lrwxrwxrwx 1 monica monica    17  9月 25 22:58 libhello.so.2 -> libhello.so.2.3.4
+-rwxrwxr-x 1 monica monica 15568  9月 25 22:58 libhello.so.2.3.4
+-rw-rw-r-- 1 monica monica    49  9月 25 21:36 main.c
+
+# 6.查看 ldconfig 缓存，发现 SONAME -> 此 SONAME 软链接的真实路径
+# 左边是可被查找的库名（通常是 SONAME），括号里是这条记录适用的 ABI/架构信息，右边是实际文件路径
+# 动态加载器（ld.so）运行时就是按这个缓存把名字解析到具体文件的。
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ ldconfig -p | grep foo
+	libfoo.so.1 (libc6,x86-64) => /home/monica/linkers_loaders/tmp/soname-demo/libfoo.so.1
+```
+
+#### 3.1.2 ldconfig 遇到多个不同 SONAME 的库
+
+对于两个共享库 SONAME 不同的情形，ldconfig 会按各自的 SONAME 建立和更新链接，比如若 **`libfoo.so.1.Y.Z`** 这个共享库族存在多个版本，则 ldconfig 选取最高版本建立 SONAME 软链接 **`libfoo.so.1 -> libfoo.so.1.Y`**；若 **`libfoo.so.2.Y.Z`** 这个共享库族存在多个版本，则 ldconfig 选取最高版本建立 SONAME 软链接 **`libfoo.so.2 -> libfoo.so.2.Y`**。
+
+在 **`/etc/ld.so.cache`** 缓存中会有两条独立的键，运行时需要 **`libfoo.so.1`** 的程序只会装载此软链接指向的共享库；需要 **`libfoo.so.2`** 的程序只会装载此软链接指向的共享库，互不影响。
+
+```shell{.line-numbers}
+# 1.创建一个共享库 libfoo.so.1.2.3，其 SONAME 为 libfoo.so.1
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc -shared hello.o -o libfoo.so.1.2.3 -Wl,-soname,libfoo.so.1
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ readelf -d libfoo.so.1.2.3 | grep soname
+ 0x000000000000000e (SONAME)             Library soname: [libfoo.so.1]
+
+# 2.创建一个共享库 libfoo.so.2.3.4，其 SONAME 也为 libfoo.so.2
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc -shared hello.o -o libfoo.so.2.3.4 -Wl,-soname,libfoo.so.2
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ readelf -d libfoo.so.2.3.4 | grep soname
+ 0x000000000000000e (SONAME)             Library soname: [libfoo.so.2]
+
+# 3.使用命令 ldconfig 来更新扫描 /etc/ld.so.conf 以及受信任目录中的共享库 SONAME 链接，并且更新 /etc/ld.so.cache
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ sudo ldconfig
+
+# 4.ls -l 命令的结果显示 ldconfig 按各自的 SONAME 建立和更新链接
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ ls -l
+总用量 76
+-rwxrwxr-x 1 monica monica 15952  9月 25 23:27 app
+-rw-rw-r-- 1 monica monica    73  9月 25 21:34 hello.c
+-rw-rw-r-- 1 monica monica  1504  9月 25 22:58 hello.o
+lrwxrwxrwx 1 root     root        15  9月 26 23:13 libfoo.so.1 -> libfoo.so.1.2.3
+-rwxrwxr-x 1 monica monica 15568  9月 26 23:12 libfoo.so.1.2.3
+lrwxrwxrwx 1 root     root        15  9月 26 23:13 libfoo.so.2 -> libfoo.so.2.3.4
+-rwxrwxr-x 1 monica monica 15568  9月 26 23:12 libfoo.so.2.3.4
+lrwxrwxrwx 1 monica monica    13  9月 25 22:58 libhello.so -> libhello.so.2
+lrwxrwxrwx 1 monica monica    17  9月 25 22:58 libhello.so.2 -> libhello.so.2.3.4
+-rwxrwxr-x 1 monica monica 15568  9月 25 22:58 libhello.so.2.3.4
+-rw-rw-r-- 1 monica monica    49  9月 25 21:36 main.c
+
+# 5.查看 ldconfig 缓存，发现有 2 条链
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ ldconfig -p | grep foo
+	libfoo.so.2 (libc6,x86-64) => /home/monica/linkers_loaders/tmp/soname-demo/libfoo.so.2
+	libfoo.so.1 (libc6,x86-64) => /home/monica/linkers_loaders/tmp/soname-demo/libfoo.so.1
+```
+
+### 3.2 共享库的系统路径
+
+目前大多数包括 Linux 在内的开源操作系统都遵守一个叫做 FHS（File Hierarchy Standard）的标准，这个标准规定了一个系统中的系统文件应该如何存放，包括各个目录的结构、组织和作用。FHS 规定，一个系统中主要有两个存放共享库的位置，它们分别如下：
+
+- **`/lib`**：**这个位置主要存放系统最关键和基础的共享库**，比如动态链接器、C 语言运行库、数学库等，这些库主要是那些 **`/bin`** 和 **`/sbin`** 下的程序所需要到的库，还有系统启动时需要的库。
+- **`/usr/lib`**：**这个目录下主要保存的是一些非系统运行时所需要的关键性的共享库**，主要是一些开发时用到的共享库，这个目录下面还包含了开发时可能会用到的静态库、目标文件等。
+- **`/usr/local/lib`**：这个目录用来放置一些跟操作系统本身并不十分相关的库，主要是一些第三方的应用程序的库。GNU 的标准推荐第三方的程序应该默认将库安装到 **`/usr/local/lib`** 下。
+
+### 3.3 共享库的查找过程
+
+动态链接的 ELF 可执行文件在启动时同时会启动动态链接器。在 Linux 系统中，动态链接器是 **`/lib/ld-linux.so.X`**（X 是版本号），程序所依赖的共享对象全部由动态链接器负责装载和初始化。我们知道任何一个动态链接的模块所依赖的模块路径保存在 **`.dynamic`** 段里面，由 **`DT_NEED`** 类型的项表示。
+
+动态链接器对于模块的查找有一定的规则：如果 **`DT_NEED`** 里面保存的是绝对路径，那么动态链接器就按照这个路径去查找；如果 **`DT_NEED`** 里面保存的是相对路径，那么动态链接器会在 **`/lib`**、**`/usr/lib`** 和由 **`/etc/ld.so.conf`** 配置文件指定的目录中查找共享库。为了程序的可移植性和兼容性，共享库的路径往往是相对的。
+
+**`ld.so.conf`** 是一个文本配置文件，它可能包含其他的配置文件，这些配置文件中存放着目录信息。在我的机器中，**`ld.so.conf`** 指定的目录是：
+
+```shell{.line-numbers}
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ cat /etc/ld.so.conf
+include /etc/ld.so.conf.d/*.conf
+/home/monica/software/linux_dir/dynamic_lib/lib
+/usr/local/lib
+```
+
+**`include /etc/ld.so.conf.d/*.conf`** 这一行配置的意思是在解析 **`/etc/ld.so.conf`** 时，**<font color="red">把 **`/etc/ld.so.conf.d/`** 目录里所有匹配 **`*.conf`** 的文件一并纳入（就像把那些文件的内容原地插入到这行位置一样）</font>**。这样做的好处是让系统或软件包把自己的库搜索目录放到独立的"片段文件"里，你安装/卸载包时只需增删对应的 **`.conf`** 文件即可，不必直接改主配置文件。
+
+如果动态链接器在每次查找共享库时都去遍历这些目录，那将会非常耗费时间。所以 Linux 系统中都有一个叫做 ldconfig 的程序，**<font color="red">这个程序的作用是为共享库目录下的各个共享库创建、删除或更新相应的 SO-NAME（即相应的符号链接）</font>**，这样每个共享库的 SO-NAME 就能够指向正确的共享库文件；**<font color="red">并且这个程序还会将这些 SO-NAME 收集起来，集中存放到 **`/etc/ld.so.cache`** 文件里面，并建立一个 SO-NAME 的缓存</font>**。当动态链接器要查找共享库时，它可以直接从 **`/etc/ld.so.cache`** 里面查找。而 **`/etc/ld.so.cache`** 的结构是经过特殊设计的，非常适合查找，所以这个设计大大加快了共享库的查找过程。
+
+如果动态链接器在 **`/etc/ld.so.cache`** 里面没有找到所需要的共享库，那么它还会遍历 **`/lib`** 和 **`/usr/lib`** 这两个目录，如果还是没找到，就宣告失败。
+
+所以理论上讲，如果我们在系统指定的共享库目录下添加、删除或更新任何一个共享库，或者我们更改了 **`/etc/ld.so.conf`** 的配置，都应该运行 ldconfig 这个程序，以便调整 SO-NAME 和 **`/etc/ld.so.cache`**。很多软件包的安装程序在安装共享库以后都会自动调用 ldconfig。
+
+### 3.4 环境变量
+
+当动态链接器加载这个程序时，它会按照如下的顺序去搜索程序依赖的共享库：
+
+- 若二进制含 **`DT_RPATH`** 且没有 **`DT_RUNPATH`**，则先查 RPATH (在可执行文件或调用库中定义的路径)；
+- 查找 **`LD_LIBRARY_PATH`** 路径；
+- 若含 **`DT_RUNPATH`**，按 **`RUNPATH`** 查找；
+- 查找 **`/etc/ld.so.cache`** 缓存；
+- 查默认目录，**`/lib*`**，**`/usr/lib*`** 等；
+
+>1).Using the directories specified in the **`DT_RPATH`** dynamic section attribute of the binary if present and **`DT_RUNPATH`** attribute does not exist.
+>2).Using the environment variable **`LD_LIBRARY_PATH`**, unless the executable is being run in secure-execution mode (see below), in which case this variable is ignored.
+>3).Using the directories specified in the **`DT_RUNPATH`** dynamic section attribute of the binary if present. Such directories are searched only to find those objects required by **`DT_NEEDED`** (direct dependencies) entries and do not apply to those objects' children, which must themselves have their own **`DT_RUNPATH`** entries. This is unlike **`DT_RPATH`**, which is applied to searches for all children in the dependency tree.
+>4).From the cache file **`/etc/ld.so.cache`**, which contains a compiled list of candidate shared objects previously found in the augmented library path.
+>5).In the default path /lib, and then **`/usr/lib`**. (On some 64-bit architectures, the default paths for 64-bit shared objects are **`/lib64`**, and then **`/usr/lib64`**.).
+
+#### 3.4.1 RPATH/RUNPATH
+
+如果设置了 **`RPATH/RUNPATH`**，在编译链接程序的时候，开发者就直接把库的路径信息内置到了可执行文件 ELF 头部中（**`DT_RPATH/DT_RUNPATH`**）。程序启动时，程序自己就知道到哪个路径中去搜索库，这是一种永久的、内部的配置。
+
+**`RPATH（DT_RPATH）`** 的优先级高于 **`LD_LIBRARY_PATH`**。这意味着，一旦一个程序的 RPATH 被设置，用户就无法使用 **`LD_LIBRARY_PATH`** 来覆盖它，让程序去加载另一个位置的同名库。RPATH 在可执行/库上设置后，既影响本对象的直接依赖，也会传递影响间接依赖。现代系统上若同时存在 RUNPATH，则 RPATH 会被忽略。使用如下命令强制生成 RPATH。**`$ORIGIN`** 变量表示在运行时，**<font color="red">动态链接器会将 **`$ORIGIN`** 动态地替换为可执行文件本身所在的绝对路径</font>**。
+
+```c{.line-numbers}
+-Wl,--disable-new-dtags,-rpath,'$ORIGIN/lib'
+```
+
+**`RUNPATH（DT_RUNPATH）`** 的优先级低于 **`LD_LIBRARY_PATH`**，只对直接依赖生效（不传递给子依赖）。现代 GNU 链接器默认更倾向生成 **`RUNPATH`**，可以使用如下命令生成 **`RUNPATH`**。
+
+```c{.line-numbers}
+// 必要时加 -Wl,--enable-new-dtags 明确开启
+-Wl,-rpath,'$ORIGIN/lib'
+```
+
+举例如下所示：
+
+```shell{.line-numbers}
+# 1.在可执行文件的 ELF 头部条目生成 RPATH
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc main.c -L. -lhello  -o app -Wl,--disable-new-dtags,-rpath,'$ORIGIN'
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ readelf -d app | grep PATH
+ 0x000000000000000f (RPATH)              Library rpath: [$ORIGIN]
+
+# 2.在可执行文件的 ELF 头部条目生成 RUNPATH
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc main.c -L. -lhello  -o app -Wl,--enable-new-dtags,-rpath,'$ORIGIN'
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ readelf -d app | grep PATH
+ 0x000000000000001d (RUNPATH)            Library runpath: [$ORIGIN]
+```
+
+#### 3.4.2 LD_LIBRARY_PATH
+
+Linux 系统提供了很多方法来改变动态链接器装载共享库路径的方法，其中改变共享库查找路径最简单的方法是使用 **`LD_LIBRARY_PATH`** 环境变量，这个方法可以临时地、优先地告诉系统上的动态链接器/加载器 (ld.so) 在哪些额外的目录中去查找共享库，而不会影响系统中的其他程序。
+
+在 Linux 系统中，**`LD_LIBRARY_PATH`** 是一个由若干个路径组成的环境变量，每个路径之间由冒号隔开。默认情况下，**`LD_LIBRARY_PATH`** 为空。如果我们为某个进程设置了 **`LD_LIBRARY_PATH`**，那么进程在启动时，动态链接器在查找共享库时，会首先查找由 **`LD_LIBRARY_PATH`** 指定的目录。这个环境变量可以很方便地让我们测试新的共享库或使用非标准的共享库。比如我们希望使用修改过的 **`libc.so.6`**，可以将这个新版的 libc 放到我们的目录 **`/home/user`** 中，然后指定 **`LD_LIBRARY_PATH`**：
+
+```c{.line-numbers}
+$ LD_LIBRARY_PATH=/home/user /bin/ls
+```
+
+#### 3.4.3 LD_PRELOAD
+
+系统中另外还有一个环境变量叫做 **`LD_PRELOAD`**，这个文件中我们可以指定预先装载的一些共享库甚至是目标文件。在 **`LD_PRELOAD`** 里面指定的文件会在动态链接器按照固定规则搜索共享库之前装载。**<font color="red">它比 **`LD_LIBRARY_PATH`** 里面所指定的目录中的共享库还要优先。无论程序是否依赖于它们， **`LD_PRELOAD`** 里面指定的共享库或目标文件都会被装载</font>**。
+
+由于全局符号介入这个机制的存在，**`LD_PRELOAD`** 里面指定的共享库或目标文件中的全局符号会覆盖后面加载的同名全局符号，这使得我们可以很方便地做到改写标准 C 库中的某个或某几个函数而不影响其他函数，对于程序的调试或测试非常有用。与 **`LD_LIBRARY_PATH`** 一样，正常情况下应该尽量避免使用 **`LD_PRELOAD`**，比如一个发布版本的程序运行不应该依赖于 **`LD_PRELOAD`**。
+
+**`LD_LIBRARY_PATH`** 的作用是告诉链接器"去这些目录里找库"，只改变搜索路径。**`LD_PRELOAD`** 的作用是告诉链接器"先把这些库加载进来"（在一切库前预先装入指定 **`.so`**，其导出符号在全局查找时优先匹配），改变装载顺序与符号优先级，可实现函数拦截/替换（interpose）。
+
+## 4.共享库的创建和安装
+
+### 4.1 共享库的创建
 
