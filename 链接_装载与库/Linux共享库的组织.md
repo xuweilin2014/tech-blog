@@ -598,3 +598,109 @@ $ LD_LIBRARY_PATH=/home/user /bin/ls
 
 ### 4.1 共享库的创建
 
+创建共享库的过程跟创建一般的共享对象的过程基本一致，最关键的是使用 GCC 的两个参数，即 **`-shared`** 和 **`-fPIC`**。**`-shared`** 表示编译出的结果是共享库对象；**`-fPIC`** 表示使用地址无关代码（Position Independent Code）技术来生产输出文件。另外还有一个参数是 **`-Wl`** 參数，这个参数可以将指定的参数传递给链接器，比如当我们使用 **`-Wl,-soname,my_soname`** 时，**<font color="red">GCC 会将 **`-soname my_soname`** 传递给链接器，用来指定输出共享库的 SO-NAME</font>**。
+
+所以我们可以使用如下命令行来生成一个共享库：
+
+```c{.line-numbers}
+$gcc -shared -Wl,-soname,my_soname -o library_name source_files library_files
+```
+
+>如果我们不使用 **`-soname`** 来指定共享库的 SO-NAME，那么该共享库默认就没有 SO-NAME，即使用 ldconfig 更新 SO-NAME 的软链接时，对该共享库也没有效果。
+
+比如我们有 **`libfoo1.c`** 和 **`libfoo2.c`** 两个源代码文件，希望产生一个 **`libfoo.so.1.0.0`** 的共享库，这个共享库依赖于 **`libbar1.so`** 和 **`libbar2.so`**。这两个共享库，我们可以使用如下命令行：
+
+```c{.line-numbers}
+$gcc -shared -fPIC -Wl,-soname,libfoo.so.1 -o libfoo.so.1.0.0 \ 
+libfoo1.c libfoo2.c \ 
+-lbar1 -lbar2
+```
+
+当然我们也可以把编译和链接的步骤分开，分多步进行：
+
+```c{.line-numbers}
+$gcc -c -g -Wall -o libfoo1.o libfoo1.c 
+$gcc -c -g -Wall -o libfoo2.o libfoo2.c 
+$ld -shared -soname libfoo.so.1 -o libfoo.so.1.0.0 \ 
+libfoo1.o libfoo2.o -lbar1 -lbar2
+```
+
+在开发过程中，你可能要测试新的共享库，但是你又不希望影响现有的程序正常运行。我们前面提到的 **`LD_LIBRARY_PATH`** 是一个很好的方法，用它可以指定共享库的查找路径。还有一种方法是 **<font color="red">使用链接器的 **`-rpath`** 选项（或者 GCC 的 `-Wl,-rpath`），这种方法可以指定链接产生的目标程序的共享库查找路径</font>**。比如我们用如下命令行产生一个可执行文件：
+
+```c{.line-numbers}
+$ld -rpath /home/mylib -o program.out program.o -lsomelib
+```
+
+默认情况下，**链接器在产生可执行文件时，只会将那些链接时被其他共享模块引用到的符号放到动态符号表**，这样可以减少动态符号表的大小。也就是说，在共享模块中被反向引用主模块中的符号时，只有那些在链接时被共享模块引用到的符号才会被导出。有一种情况是，当程序使用 **`dlopen()`** 动态加载某个共享模块，**<font color="red">而该共享模块必须反向引用主模块的符号时，有可能主模块的某些符号因为在链接时没有被其他共享模块引用而没有被放到动态符号表里面，导致了反向引用失败</font>**。ld 链接器提供了一个 **`-export-dynamic`** 的参数，这个参数表示链接器在生产可执行文件时，将所有全局符号导出到动态符号表，以防止出现上述问题。我们也可以在 GCC 中使用 **`-Wl,-export-dynamic`** 将该参数传给链接器。
+
+### 4.2 清除符号信息
+
+正常情况下编译出来的共享库或可执行文件里面带有符号信息和调试信息，这些信息在调试时非常有用，但是对于最终发布的版本来说，这些符号信息用处并不大，并且使得文件尺寸变大。我们可以使用一个叫 strip 的工具清除掉共享库或可执行文件的所有符号和调试信息：
+
+```c{.line-numbers}
+$strip libfoo.so
+```
+
+去除符号和调试信息以后的文件往往比之前要小很多，一般只有原来的一半大小，甚至不到一半。除了使用 strip 工具，我们还可以使用 ld 的 **`-s`** 和 **`-S`** 参数，使得链接器生成输出文件时就不产生符号信息。**`-s`** 和 **`-S`** 的区别是：**`-S`** 清除调试符号信息，而 **`-s`** 清除所有符号信息。我们也可以在 gcc 中通过 **`-Wl,-s`** 和 **`-Wl,-S`** 给 ld 传递这两个参数。
+
+### 4.3 共享库的安装
+
+创建共享库以后我们必须将它安装在系统中，以便于各种程序都可以共享它。最简单的办法就是将共享库复制到某个标准的共享库目录，如 **`/lib`**、**`/usr/lib`** 等，然后运行 ldconfig 即可。ldconfig 会为共享库目录下的各个共享库创建、删除或更新相应的 SONAME（即相应的符号链接），并且将这些 SONAME 软链接到真实路径的映射写入到 **`/etc/ld.so.cache`** 文件中，这样动态链接器加载这个程序时，就会去 **`/etc/ld.so.cache`** 文件中去找到真实的 SONAME 软链接文件的路径。
+
+不过上述方法往往需要系统的 root 权限，如果没有，则无法往 **`/lib`**、**`/usr/lib`** 等目录添加文件，也无法运行 ldconfig 程序。当然我们也有其他办法安装共享库，并且建立 SONAME 软链接，建立 SONAME 的办法也是使用 ldconfig，只不过需要指定共享库所在的目录：
+
+```c{.line-numbers}
+// ldconfig -n DIR 命令表示只处理命令行上给出的目录 DIR 来更新 SONAME 链，不扫描受信任目录（如 /lib、/usr/lib），也不读取 /etc/ld.so.conf，并且隐含 -N，即不重建全局缓存 /etc/ld.so.cache。
+$ldconfig -n shared_library_directory
+```
+
+在编译程序时，也需要指定共享库的位置，GCC 提供了两个参数 **`-L`** 和 **`-l`**，分别用于指定共享库搜索目录和共享库的路径。
+
+**`-lNAME`** 表示"把名为 NAME 的库加入链接"。GCC 把这个选项原样传给链接器，链接器会在搜索路径里寻找形如 **`libNAME.so`**（共享库）或 **`libNAME.a`**（静态库）的文件。若二者都存在，默认更偏向共享库，除非显式使用 **`-static`**。并且库出现的位置有先后关系：链接器按命令行从左到右处理，某个 **`-l`** 只会满足它之前对象文件里的未解析符号，**也就是 **`-lfoo`** 的位置要放在依赖它的对象文件之后，否则可能"找不到符号"**。
+
+>The -l option is passed directly to the linker by GCC. The linker searches a standard list of directories for the library. **The directories searched include several standard system directories plus any that you specify with -L** (**`-Ldir`** add directory dir to the list of directories to be searched for **`-l`**).
+>Static libraries are archives of object files, and have file names like **`liblibrary.a`**. Some targets also support shared libraries, which typically have names like **`liblibrary.so`**. If both static and shared libraries are found, the linker gives preference to linking with the shared library unless the -static option is used.
+>It makes a difference where in the command you write this option; the linker searches and processes libraries and object files in the order they are specified. Thus, **`foo.o -lz bar.o`** searches library 'z' after file foo.o but before bar.o. If bar.o refers to functions in 'z', those functions may not be loaded.
+
+关于链接期的库搜索路径，输入命令 **`gcc … -L/opt/mylib -lfoo`** 时，链接器按下述顺序找库：
+
+- **`-L`** 指定的目录（按出现顺序，优先级最高）；
+- 环境变量 **`LIBRARY_PATH`** 中列出的目录（**`LD_LIBRARY_PATH`** 是运行时给动态链接器用的，与链接期无关，和 **`LIBRARY_PATH`** 无关系）。GCC 在链接时会使用这些目录，优先级低于 **`-L`**；
+- 系统内置的标准库目录，比如 **`/usr/lib`**, **`/lib`**；
+
+**<font color="red">运行时由动态链接器查找库，它不会查看 **`-L`** 参数，因此 **`-L`** 参数只影响链接期</font>**。若希望可执行程序在运行时也能找到非系统路径里的库，要么在链接时加 **`-Wl,-rpath,<dir>`** 写入 **`RUNPATH/RPATH`**，要么设置 **`LD_LIBRARY_PATH`**，或把库安装到系统默认目录（并且 ldconfig）。
+
+```shell{.line-numbers}
+# 1.还是在 ./tmp/soname-demo 目录下，将 main.c 和 libhello.so 链接起来，没有使用 L=. 来指定去哪儿找 -lhello 选项指定的 libhello.so 库，最后链接失败
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc main.c -lhello -o app -Wl,--enable-new-dtags,-rpath,'$ORIGIN'
+/usr/bin/ld: 找不到 -lhello: 没有那个文件或目录
+collect2: error: ld returned 1 exit status
+
+# 2.设置 LIBRARY_PATH 环境变量为当前目录，链接成功
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ export LIBRARY_PATH=$PWD
+monica@monica-virtual-machine:~/linkers_loaders/tmp/soname-demo$ gcc main.c -lhello -o app -Wl,--enable-new-dtags,-rpath,'$ORIGIN'
+```
+
+### 4.4 共享库构造和析构函数
+
+很多时候希望共享库在被装载的时候能够进行一些初始化工作，比如打开文件、网络连接等，使得共享库里面的函数接口能够正常工作。GCC 提供了一种共享库的构造函数，只要在函数声明时加上 **`__attribute__((constructor))`** 的属性，即指定该函数为共享库构造函数，拥有这种属性的函数会在共享库加载时被执行，即在程序的 main 函数之前执行。如果我们使用 **`dlopen()`** 打开共享库，共享库构造函数会在 **`dlopen()`** 返回之前执行。
+
+与共享库构造函数相对应的是析构函数，我们可以可以使用在函数声明时加上 **`__attribute__((destructor))`** 的属性，这种函数会在 **`main()`** 函数执行完毕之后执行（或者是程序调用 **`exit()`** 时执行）。如果共享库是运行时加载的，那么我们使用 **`dlclose()`** 卸载共享库时，析构函数会在 **`dlclose()`** 返回之前执行。声明构造和析构函数的格式如下：
+
+```c{.line-numbers}
+void __attribute__((constructor)) init_function(void);  
+void __attribute__((destructor)) fini_function(void);  
+```
+
+当然，这种 **`__attribute__`** 的语法是 GCC 对 C 和 C++ 语言的扩展，其他编译器上这种语法并不通用。
+
+值得注意的是，**<font color="red">如果我们使用了这种构造函数和析构函数，那么必须使用系统默认的标准运行库和启动文件，即不可以使用 GCC 的 **`-nostartfiles`** 或 **`-nostdlib`** 这两个参数</font>**。因为这些构造和析构函数是在系统默认的标准运行库或启动文件里面被运行的，如果没有这些辅助结构，它们可能不会被运行。
+
+另外还有一个问题是，如果我们有多个构造函数，那么默认情况下，它们被执行的顺序是没有规定的。如果我们希望构造和析构函数能够按照一定的顺序执行，GCC 为我们提供了一个参数叫做优先级，我们可以指定某个构造或析构函数的优先级：
+
+```c{.line-numbers}
+void __attribute__((constructor(5))) init_function1(void);  
+void __attribute__((constructor(10))) init_function2(void);  
+```
+
+对于构造函数来说，属性中优先级数字越小的函数将会在优先级大的函数之前运行；而对于析构函数来讲，则刚好相反。
