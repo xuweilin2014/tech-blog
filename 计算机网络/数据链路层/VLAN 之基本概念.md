@@ -26,6 +26,13 @@
 
 一个 VLAN 就是一个广播域，所以在同一个 VLAN 内部，计算机之间的通信就是二层通信。如果源计算机与目的计算机位于不同的 VLAN 中，那么它们之间是无法进行二层通信的，只能进行三层通信来传递信息。
 
+使用 VLAN 具有如下优点：
+
+- 隔绝广播：当交换机部署 VLAN 后，广播数据的泛洪被限制在 VLAN 内。利用 VLAN 技术可以将网络从原来的一个大的广播域切割成多个较小的广播域，从而减少了泛洪带来的带宽资源及设备性能的损耗。
+- 提高网络组建的灵活度：VLAN 技术使得网络设计和部署更加灵活。同一个工作组的用户不再需要局限在同一个地理位置。
+- 提高网络的可管理性：通过将不同的业务规划到不同的 VLAN，并且分配不同的 IP 网段，从而将每个业务划分成独立的单元，极大地方便了网络管理和维护。
+- 提高网络的安全性：利用 VLAN 技术可以将不同的业务进行二层隔离。由于不同 VLAN 之间相互隔离，因此当一个 VLAN 发生故障，例如某个 VLAN 内发生 ARP 欺骗行为，不会影响到其他 VLAN。
+
 ## 二、VLAN 的基本原理
 
 ### 1.单交换机 VLAN 转发示例
@@ -88,7 +95,7 @@
 
 ## 三、802.1Q 帧的格式
 
-IEEE802.1D 定义了关于不支持 VLAN 特性的交换机的标准规范，IEEE802.1Q 定义了关于支持 VLAN 特性的交换机的标准规范。IEEE802.1Q 的内容覆盖了 IEEE802.1D 的所有内容，并增加了有关 VLAN 特性的内容。
+IEEE802.1D 定义了关于不支持 VLAN 特性的交换机的标准规范，IEEE802.1Q（也被称为 Dot1Q 规范）定义了关于支持 VLAN 特性的交换机的标准规范。IEEE802.1Q 的内容覆盖了 IEEE802.1D 的所有内容，并增加了有关 VLAN 特性的内容。
 
 交换机在识别一个帧是属于哪个 VLAN 的时候，可以根据这个帧是从哪个端口进入自己的来进行判定，也可能需要根据别的信息来进行判定。通常，**<font color="red">交换机识别出某个帧是属于哪个 VLAN 后，会在这个帧的特定位置上添加上一个标签（Tag），这个 Tag 明确地表明了这个帧是属于哪个 VLAN 的</font>**。这样一来，别的交换机收到这个带 Tag 的帧后，就能轻易而举地直接根据 Tag 信息识别出这个帧是属于哪个 VLAN 的。IEEE802.1Q 定义了这种带 Tag 的帧的格式，满足这种格式的帧称为 IEEE802.1Q 帧，如下图所示。
 
@@ -124,7 +131,15 @@ IEEE802.1D 定义了关于不支持 VLAN 特性的交换机的标准规范，IEE
 
 **注意，对于 Tagged VLAN 帧，交换机显然能够从其 Tag 中的 VID 值判定出它属于哪个 VLAN；对于 Untagged VLAN 帧（例如终端计算机发出的帧），交换机需要根据某种原则（比如根据这个帧是从哪个端口进入交换机的）来判定或划分它属于哪个 VLAN**。
 
-在一个支持 VLAN 特性的交换网络中，我们把交换机与终端计算机直接相连的链路称为 Access 链路（Access Link），把 Access 链路上交换机一侧的端口称为 Access 端口（Access Port）。同时，我们把交换机之间直接相连的链路称为 Trunk 链路（Trunk Link），把 Trunk 链路上两侧的端口称为 Trunk 端口（Trunk Port）。
+在一个支持 VLAN 特性的交换网络中，我们把交换机与终端计算机直接相连的链路称为 Access 链路（Access Link），把 Access 链路上交换机一侧的端口称为 Access 端口（Access Port）。同时，我们把交换机之间直接相连的链路称为 Trunk 链路（Trunk Link），把 Trunk 链路上两侧的端口称为 Trunk 端口（Trunk Port）。**<font color="red">但是当交换机的接口用于连接路由器时，如果路由器的接口工作在 3 层模式，并且没有部署子接口（sub-interface），那么交换机侧的该接口也应被配置为 Access 端口</font>**，如下图所示的 port8。
+
+如果路由器这根物理口只承载一个网段/一个 VLAN，而且路由器侧没有做 802.1Q 子接口，那交换机侧就把对接口当作接入某个 VLAN 的无标签口来用——最常见就是配成 Access。当希望一根链路同时承载多个 VLAN（比如 VLAN10/20/30 都要送到路由器做三层网关或策略），**<font color="blue">路由器就需要在同一物理口下建多个 Sub-interface，并在每个子接口上配置 802.1Q **`encapsulation/dot1q VLAN ID`**，用 VLAN Tag 来区分不同 VLAN 的流量，这就是经典的 router-on-a-stick，此时交换机侧必须配 Trunk 去传递 VLAN Tag</font>，并放行相应 VLAN**。
+
+比如在园区/企业网里，子接口最常见的用途就是配合 VLAN（802.1Q）做一线多 VLAN，一根链路承载多个 VLAN（典型单臂路由）。路由器在 GE0/0/1.10 上配置 **`encapsulation dot1q 10`** + 网关1 IP，在 GE0/0/1.20 上配置 **`encapsulation dot1q 20`** + 网关2 IP，交换机对接口配 Trunk，放行 VLAN 10/20，这样不同 VLAN 的流量通过同一物理口进入路由器，由不同子接口区分。
+
+<div align="center">
+    <img src="VLAN_static//21.png" width="450"/>
+</div>
 
 **<font color="red">在一条 Access 链路上运动的帧只能是 Untagged 帧，并且这些帧只能属于某个特定的 VLAN；在一条 Trunk 链路上运动的帧只能是（或者说应该是）Tagged 帧，并且这些帧可以属于不同的 VLAN</font>**。一个 Access 端口只能属于某个特定的 VLAN，并且只能让属于这个特定 VLAN 的帧通过；一个 Trunk 端口可以同时属于多个 VLAN，并且可以让属于不同 VLAN 的帧通过，如下图所示。
 
@@ -221,156 +236,101 @@ Hybrid 端口除了需要配置 PVID 外，还需要配置两个 VLAN ID 列表�
 
 交换机 2 的 Port1 收到来自 Port4 的 Tagged Z 帧后，会剥去 Tag，然后将 Untagged Z 帧发送给 PC4。最后，PC2 和 PC4 都会接收到不带 Tag 的 Z 帧，但都会将之丢弃。**<font color="red">PC6 并不能接收到 PC1 发送给自己的 Z 帧，交换机阻断了 PC1 和 PC6 之间的二层通信</font>**。
 
-## 七、VLAN 间的三层通信
+## 七、VLAN 实际案例
 
-### 1.通过多臂路由器实现 VLAN 间的三层通信
-
-如下图所示，3 台交换机和 4 台 PC 组成了一个交换网络，在此网络上划分了两个基于端口的 VLAN，分别为 VLAN10 和 VLAN20，其中 PC1 和 PC2 属于 VLAN10，PC3 和 PC4 属于 VLAN20。
+### 1.Access 与 Trunk 类型接口的基础配置
 
 <div align="center">
-    <img src="VLAN_static//17.png" width="550"/>
+    <img src="VLAN_static//22.png" width="600"/>
 </div>
 
-在上图中，PC1 与 PC4 之间是无法进行任何通信的，这是因为 PC1 和 PC4 属于不同的 VLAN，所以它们之间无法进行二层通信；同时，由于它们之间目前尚未存在一个“三层通道”，所以它们之间也无法进行三层通信。
+SW1 的配置如下所示：
 
-那么，如何才能在 PC1 和 PC4 之间实现三层通信呢？方法之一便是引入一台路由器。**<font color="red">路由器的作用实质上就是在不同的二层网络（二层广播域）之间建立起三层通道。不同的 VLAN 其实就是不同的二层网络（二层广播域），所以路由器当然也可以在不同的 VLAN 之间建立起三层通道</font>**。
+```java{.line-numbers}
+[SW1]vlan batch 10 20                                # 批量创建 VLAN10 和 VLAN20
 
-我们看到，路由器 R 的 GE1/0/0 接口与交换机 S1 的属于 VLAN10 的 D1 端口相连，路由器 R 的 GE2/0/0 接口与交换机 S1 的属于 VLAN20 的 D2 端口相连。需要特别提醒的是，**<font color="red">与 PC 的接口一样，路由器 R 的 GE1/0/0 接口和 GE2/0/0 接口都是不能发送和接收 Tagged VLAN 帧的</font>**。另外，从下图中我们也看到，路由器 R 分别从 GE1/0/0 接口和 GE2/0/0 接口各自引出了一条物理链路，每条物理链路可以被形象地称为路由器的一条"手臂"，所以这里的路由器 R 也常常被形象地称为"双臂路由器"，或泛泛地称为多臂路由器。
+[SW1]interface gigabitethernet 1/0/2
+[SW1-GigabitEthernet1/0/2]port link-type access      # 将该接口配置为 Access 类型
+[SW1-GigabitEthernet1/0/2]port default vlan 10       # 接口添加到 VLAN10
+[SW1-GigabitEthernet1/0/2]quit
 
-<div align="center">
-    <img src="VLAN_static//18.png" width="750"/>
-</div>
+[SW1]interface gigabitethernet 1/0/3
+[SW1-GigabitEthernet1/0/3]port link-type access      # 将该接口配置为 Access 类型
+[SW1-GigabitEthernet1/0/3]port default vlan 20       # 接口添加到 VLAN20
+[SW1-GigabitEthernet1/0/3]quit
 
-接下来，我们通过一个例子来说明 PC1 和 PC4 是如何实现三层通信的，也就是说，PC1 是如何将一个名为 P 的 IP 报文成功地发送给 PC4 的。上图中，交换机的 Access 端口有：S2 的 D1 端口和 D2 端口，S3 的 D1 端口和 D2 端口，S1 的 D1 端口和 D2 端口。交换机的 Trunk 端口有：S2 的 D3 端口，S3 的 D3 端口，S1 的 D3 端口和 D4 端口。
-
-首先，P 是在 PC1 的网络层形成的，P 的目的 IP 地址为 **`192.168.200.40`**，源 IP 地址为 **`192.168.100.10`**。然后，根据 P 的目的 IP 地址，PC1 会进行 IP 路由表的查询工作。PC1 的 IP 路由表中有两条路由，其中一条为缺省路由。显然，P 的目的 IP 地址 **`192.168.200.40`** 只能匹配上那条缺省路由，该路由的出接口为 PC1 的 Ethernet0/0/1 接口，下一跳 IP 地址为路由器 R 的 GE1/0/0 接口的 IP 地址 **`192.168.100.1`**（**<font color="red">路由器 R 的 GE1/0/0 接口也因此被称为是 **`192.168.100.0/24`** 或 VLAN10 的缺省网关</font>**）。
-
-于是，根据这条缺省路由的指示，P 会被下发至 PC1 的 Ethernet0/0/1 接口，并被封装成一个帧。假设这个帧取名为 X，那么 X 帧的载荷数据就是 P，**<font color="red">X 帧的源 MAC 地址为 PC1 的 Ethernet0/0/1 接口的 MAC 地址，X 帧的目的 MAC 地址为路由器 R 的 GE1/0/0 接口的 MAC 地址</font>**。注意，此时的 X 帧是一个不带 VLAN Tag 的帧。
-
-接下来，PC1 会从 Ethernet0/0/1 接口将 Untagged X 帧发送出去。X 帧从 S2 的 D1 端口进入 S2 后，会被添加上 VLAN10 的 Tag，并且这个 Tagged X 帧会被 S2 转发至 S1。S1 会将 Tagged X 帧的 Tag 去掉，然后将它从自己的 D1 端口转发出去。
-
-路由器 R 的 GE1/0/0 接口在收到 S1 转发过来的 Untagged X 帧后，会将 Untagged X 帧的目的 MAC 地址与自己的 MAC 地址进行比较。由于这两个 MAC 地址是相同的，所以 R 的 GE1/0/0 接口会根据这个帧的类型字段值 0x0800 将这个帧的数据载荷（也就是 P）上送给 R 的三层 IP 模块。R 的 IP 模块接收到 P 后，会根据 P 的目的 IP 地址 **`192.168.200.40`** 查询自己的 IP 路由表。**<font color="red">显然，`192.168.200.40` 这个 IP 地址只与 IP 路由表中的第二条路由匹配，该路由的出接口为 GE2/0/0 接口，下一跳 IP 地址是 GE2/0/0 接口的 IP 地址</font>**（这说明 P 要去往的目的网络是与 GE2/0/0 接口直接相连的）。
-
-于是，根据这条路由的指示，P 会被下发至 R 的 GE2/0/0 接口，并被封装成一个帧。假设这个帧取名为 Y，那么 Y 帧的载荷数据就是 P，Y 帧的类型字段的值为 0x0800，**<font color="red">Y 帧的源 MAC 地址为 GE2/0/0 接口的 MAC 地址，Y 帧的目的 MAC 地址为 P 的目的 IP 地址 `192.168.200.40` 所对应的 MAC 地址</font>**。注意，此时的 Y 帧是一个不带 VLAN Tag 的帧。
-
-R 通过其 GE2/0/0 接口将 Untagged Y 帧发送出去。Untagged Y 帧从 S1 的 D2 端口进入 S1 后，会被添加上 VLAN20 的 Tag，并且这个 Tagged Y 帧会被 S1 转发至 S3。S3 会将 Tagged Y 帧的 Tag 去掉，然后将它从自己的 D2 端口转发出去。
-
-PC4 的 Ethernet0/0/1 接口在收到 S3 转发过来的 Untagged Y 帧后，会将 Untagged Y 帧的目的 MAC 地址与自己的 MAC 地址进行比较。由于这两个 MAC 地址是相同的，所以 PC4 的 Ethernet0/0/1 接口会根据这个帧的类型字段值 0x0800 将这个帧的数据载荷（也就是 P）上送给 PC4 的位于三层的 IP 模块。
-
-至此，源于 PC1 的三层 IP 模块的 IP 报文 P 便成功地到达了 PC4 的三层 IP 模块，属于 VLAN10 的 PC1 与属于 VLAN20 的 PC4 之间成功地进行了一次三层通信。
-
-### 2.通过单臂路由器实现 VLAN 间的三层通信
-
-VLAN 间的三层通信可以通过多臂路由器来实现，但这种实现方法面临的一个主要问题是：**<font color="red">每一个 VLAN 都需要占用路由器上的一个物理接口</font>**（也就是说，每一个 VLAN 都需要路由器从一个物理接口伸出一只手臂来）。如果 VLAN 数量众多，就需要占用大量的路由器接口。事实上，路由器的物理接口资源是非常宝贵而稀缺的，一台路由器上的物理接口数量通常都是非常有限的，无法支持数量较多的 VLAN。实际的网络部署中，几乎都不会通过多臂路由器来实现 VLAN 间的三层通信。
-
-为了节省路由器的物理接口资源，我们还可以通过单臂路由器的方法来实现 VLAN 间的三层通信。采用这种方法时，仍然必须对路由器的物理接口进行子接口（Sub-Interface）划分。**<font color="red">一个路由器的物理接口可以划分为多个子接口，不同的子接口可以对应于不同的 VLAN，这些子接口的 MAC 地址均为衍生出它们的那个物理接口的 MAC 地址，但是它们的 IP 地址各不相同</font>**。一个子接口的 IP 地址应当属于该子接口所对应的那个 VLAN 的缺省网关地址。子接口是一个逻辑上的概念，所以子接口也常常被称为虚接口。
-
-如下图所示，路由器 R 的物理接口 **`GE1/0/0`** 被划分成了两个子接口，分别为 **`GE1/0/0.1`** 和 **`GE1/0/0.2`**。**`GE1/0/0.1`** 对应于 VLAN10，**`GE1/0/0.2`** 对应于 VLAN20。**`GE1/0/0.1`** 的 IP 地址为 **`192.168.100.1/24`**，也就是 VLAN10 的缺省网关地址；**`GE1/0/0.2`** 的 IP 地址为 **`192.168.200.1/24`**，也就是 VLAN20 的缺省网关地址。子接口 **`GE1/0/0.1`** 的 MAC 地址和 **`GE1/0/0.2`** 的 MAC 地址是一样的，都是物理接口 **`GE1/0/0`** 的 MAC 地址。
-
-<div align="center">
-    <img src="VLAN_static//19.png" width="750"/>
-</div>
-
-在上图中，交换机的 Access 端口有：S2 的 D1 端口和 D2 端口，S3 的 D1 端口和 D2 端口。**<font color="red">交换机的 Trunk 端口有：S2 的 D3 端口，S3 的 D3 端口，S1 的 D3 端口和 D1、D2 端口</font>**。属于 VLAN10 的帧和属于 VLAN20 的帧都需要依次传递到 S1 的 D1 端口，因此 S1 与 R 之间的链路是一条 VLAN Trunk 链路（此链路上需要同时传递 VLAN10、VLAN20 的数据帧）。**<font color="red">该链路传送的帧必须是带有 VLAN Tag 的，这也意味着子接口 **`GE1/0/0.1`** 或 **`GE1/0/0.2`** 向外发送的帧也必须是带有 VLAN Tag 的</font>**。
-
-接下来，我们还是通过一个例子来说明上图中的 PC1 和 PC4 之间是如何实现三层通信的，也就是说，PC1 是如何将一个名为 P 的 IP 报文成功地发送给 PC4 的。
-
-首先，P 是在 PC1 的网络层形成的，P 的目的 IP 地址为 **`192.168.200.40`**，源 IP 地址为 **`192.168.100.10`**。然后，根据 P 的目的 IP 地址，PC1 会进行 IP 路由表的查询工作。显然，P 的目的 IP 地址 **`192.168.200.40`** 只能匹配上那条缺省路由，该路由的出接口为 PC1 的 Ethernet0/0/1 接口，下一跳 IP 地址为路由器 R 的 **`GE1/0/0.1`** 子接口的 IP 地址 **`192.168.100.1`**（**<font color="red">路由器 R 的 **`GE1/0/0.1`** 子接口也因此被称为是 **`192.168.100.0/24`** 或 VLAN10 的缺省网关</font>**）。
-
-于是，根据这条缺省路由的指示，P 会被下发至 PC1 的 Ethernet0/0/1 接口，并被封装成一个帧。假设这个帧取名为 X，那么 X 帧的载荷数据就是 P，**X 帧的源 MAC 地址为 PC1 的 Ethernet0/0/1 接口的 MAC 地址，X 帧的目的 MAC 地址为路由器 R 的 `GE1/0/0.1` 子接口的 MAC 地址**。注意，此时的 X 帧是一个不带 VLAN Tag 的帧。
-
-接下来，PC1 会从 Ethernet0/0/1 接口将 Untagged X 帧发送出去。Untagged X 帧从 S2 的 D1 端口进入 S2 后，会被添加上 VLAN10 的 Tag，并且这个 Tagged X 帧会被 S2 和 S1 转发至路由器的物理接口 **`GE1/0/0`**。
-
-**<font color="red">路由器 R 的物理接口 **`GE1/0/0`** 在收到 S1 转发过来的 Tagged X 帧后，发现这个帧是属于 VLAN10 的，于是这个帧会交给子接口 **`GE1/0/0.1`** 来处理</font>**。子接口 **`GE1/0/0.1`** 发现，Tagged X 帧的目的 MAC 地址正是自己的 MAC 地址，并且这个帧的类型字段的值是 0x0800，于是子接口 **`GE1/0/0.1`** 会将这个帧的载荷数据（也就是 P）上送给路由器 R 的三层 IP 模块。
-
-路由器 R 的 IP 模块接收到 P 后，会根据 P 的目的 IP 地址 **`192.168.200.40`** 查询自己的 IP 路由表。显然，**`192.168.200.40`** 这个 IP 地址只与 IP 路由表中的第一条路由相匹配，该路由的出接口为子接口 **`GE1/0/0.2`**，下一跳 IP 地址是子接口 **`GE1/0/0.2`** 的 IP 地址（这说明 P 要去往的目的网络是与子接口 **`GE1/0/0.2`** 直接相连的）。
-
-于是，根据这条路由的指示，P 会被下发至 R 的 **`GE1/0/0.2`** 子接口，并被封装成一个帧。假设这个帧取名为 Y，那么 Y 帧的载荷数据就是 P，Y 帧的类型字段的值为 0x0800，**<font color="red">Y 帧的源 MAC 地址为子接口 **`GE1/0/0.2`** 的 MAC 地址，Y 帧的目的 MAC 地址为 P 的目的 IP 地址 `192.168.200.40` 所对应的 MAC 地址</font>**。注意，Y 帧还必须带上 VLAN20 的 Tag。
-
->**`GE1/0/0.2`** 这个子接口在配置上就绑定了 VLAN 20，所以当路由器要从 **`GE1/0/0.2`** 发出帧 Y 时，会按该子接口的封装规则把以太帧封装成 802.1Q tagged，并且 VID=20。
-
-路由器 R 将 Tagged Y 帧从其子接口 **`GE1/0/0.2`** 发送出去之后（从物理直观上讲，就是从 GE1/0/0 这个物理接口发出去），该 Tagged Y 帧会到达交换机 S3 的 D2 端口。然后，S3 会将 Tagged Y 帧的 Tag 去掉，然后将它从自己的 D2 端口转发出去。
-
-PC4 的 Ethernet0/0/1 接口在收到 S3 转发过来的 Untagged Y 帧后，会将 Untagged Y 帧的目的 MAC 地址与自己的 MAC 地址进行比较。由于这两个 MAC 地址是相同的，所以 PC4 的 Ethernet0/0/1 接口会根据这个帧的类型字段值 0x0800 将这个帧的数据载荷（也就是 P）上送给 PC4 的位于三层的 IP 模块。
-
-至此，源于 PC1 的三层 IP 模块的 IP 报文 P 便成功地到达了 PC4 的三层 IP 模块，属于 VLAN10 的 PC1 与属于 VLAN20 的 PC4 之间成功地进行了一次三层通信。
-
-### 3.通过三层交换机实现 VLAN 间的三层通信
-
-#### 3.1 三层交换机讲解
-
-VLAN 间的三层通信可以通过多臂路由器或单臂路由器来实现。通过单臂路由器来实现时，可以节约路由器的物理接口资源，但是，这种方式也有其不足之处。如果 VLAN 的数量众多，VLAN 间的通信流量很大时，单臂链路所能提供的带宽就难以有效支撑这些通信流量。另外，如果单臂链路一旦发生了中断，那么所有的 VLAN 间的通信也会因此而中断。为此，人们引入了一种被称为"三层交换机"的网络设备，并通过三层交换机来更经济、更快速、更可靠地实现 VLAN 间的三层通信。在说明什么是三层交换机之前，我们必须先解释一下关于"二层口"和"三层口"的概念。
-
-通常，我们把交换机上的端口称为二层端口，或简称为二层口；同时，我们把路由器或计算机上的接口称为三层接口，或简称为三层口。二层口的行为特征与三层口的行为特征在明层的差异，具体如下。
-
-- **<font color="red">二层口只有 MAC 地址，没有 IP 地址；三层口既有 MAC 地址，又有 IP 地址</font>**。
-- 设备的某个二层口在接收到一个广播帧后，会将这个广播帧从该设备的其他所有二层口泛洪出去。
-- 设备的某个三层口在接收到一个广播帧后，会根据这个广播帧的类型字段的值将这个广播帧的载荷数据上送到该设备第三层的相关模块处理。
-- 设备的某个二层口在接收到一个单播帧后，会查找设备自己的 MAC 地址表，并将这个帧转发到对应的二层口。如果表中查不到这个 MAC 地址，则直接泛洪该帧。如果表中存在该 MAC 地址对应的端口号，则从对应端口转发出去。
-- **<font color="red">设备的某个三层口在接收到一个单播帧后，会比较该帧的目的 MAC 地址是否是该三层口的 MAC 地址。如果不是，则直接将这个帧丢弃</font>**；如果是，则根据该帧的类型字段值将这个帧的载荷数据上送到该设备第三层的相关应模块去处理。
-
-**交换机的端口都是二层口**，一台交换机的不同二层口之间不存在三层转发通道。交换机内部存在 MAC 地址表，用以进行二层转发，交换机内部不存在 IP 路由表。**路由器的端口都是三层口**，一台路由器的不同三层口之间只存在三层转发通道，不存在二层转发通道，路由器内部存在 IP 路由表，用以进行三层转发。路由器内部不存在 MAC 地址表。
-
-三层交换机的原理性定义是：三层交换机是二层交换机与路由器的一种集成形式，它除了可以拥有一些二层口外，还可以拥有一些"混合端口"（简称为"混合口"）。混合口既具有三层口的行为特征，同时又具有二层口的行为特征。
-
-**<font color="red">一台三层交换机上，不同的混合口之间既存在三层转发通道和二层转发通道，不同的二层口之间只存在二层转发通道，一个混合口与一个二层口之间也只存在二层转发通道</font>**。三层交换机既存在 MAC 地址表，用以进行二层转发，又存在 IP 路由表，用以进行三层转发。一台三层交换机上可以只有混合口，而无二层口；一台三层交换机上也可以只有二层口，而无混合口（此时的三层交换机完全退化成了一台二层交换机）。
-
-当一个三层交换机接收到一个以太帧时，其转发流程图如下所示：
-
-```mermaid
-flowchart TD
-  A["入站以太帧 (Incoming Ethernet Frame)"] --> B["入口 VLAN 归类<br/>(Access: PVID  •  Trunk: VID + Allowed List；Trunk 未打 Tag：PVID/Native)"]
-  B --> B0["VLAN 准入/合法性检查<br/>(VID 是否允许；不合法就丢弃)"]
-  B0 -->|通过| C{"检查目的 MAC"}
-
-  %% --- 非本机 / 二层路径 ---
-  C -->|"广播 / 组播 MAC"| D["在该 VLAN 内二层复制/泛洪<br/>(数据平面；组播复制可受 IGMP/MLD Snooping 等影响)"]
-
-  C -->|"单播 MAC (非本机)"| E["查二层 MAC 表 <br/> (仅在该 VLAN 作用域内)"]
-  E -->|"命中"| F["按 MAC 表指示转发到出端口"] --> Z((结束))
-  E -->|"未命中 (未知单播)"| G["在该 VLAN 内未知单播泛洪<br/>(除入口端口)"] --> Z
-  D["在该 VLAN 内二层复制/泛洪<br/>(数据平面)"] --> D1{"是否为需本机处理的控制类报文？<br/>(ARP 指向本机接口 IP、路由/管理/控制等)"}
-  D1 -->|"是"| D2["由 ARP 控制模块处理；<br/>若目标是本机 IP 则生成应答(如 ARP Reply 单播)"]
-  D1 -->|"否"| D3["仅做二层泛洪/复制，不做本机终结处理"] 
-  D3 --> Z
-  D2 --> Z
-  
-  %% --- 命中本机 MAC -> 三层/控制路径 ---
-  C -->|"命中本机 MAC<br/>(通常是 SVI/VLANIF MAC)"| H["进入三层/控制处理路径"]
-  H --> I{"是否需要本机终结处理？<br/>(管理/控制、ICMP)"}
-
-  I -->|"是"| J["控制面 (CPU) 终结处理<br/>(ICMP 到网关 IP、管理/控制报文等)"] --> Z
-  I -->|"否"| K["三层转发路径<br/>(通常硬件完成)"]
-
-  %% --- 三层转发细节 ---
-  K --> L["三层查表：FIB/转发表<br/>"]
-  L -->|"无路由"| L1["丢弃或回 ICMP Unreachable<br/>(依平台/配置而定)"] --> Z
-  L -->|"有路由"| M["得到：出口三层接口 + 下一跳 IP (直连：下一跳=目的 IP；非直连：下一跳=路由表 next-hop)"]
-
-  M --> Q{"出口接口类型？"}
-
-  %% --- 出口是 SVI/VLANIF：出到一个二层广播域 ---
-  Q -->|"SVI/VLANIF (出到某个 VLAN/二层域)"| R["在出口 VLAN 的二层 MAC 表查：(next-hop MAC → 物理出口端口)"]
-  R -->|"命中"| S["重写二层头并转发<br/>(L2 源 MAC=出口 SVI/VLANIF MAC；L2 目的 MAC=next-hop MAC)"] --> Z
-  R -->|"未命中"| T["出口 VLAN 内未知单播泛洪<br/>(直到学习到 MAC)"] --> Z
-
-  %% --- 出口是三层物理口/子接口：点到点或路由口 ---
-  Q -->|"三层物理口 / 子接口 (Routed Port / Sub-interface)"| U["出口端口已确定，无需再做 MAC→端口选择<br/>重写二层头后从该口发出：<br/>(L2 源 MAC=该口/子接口 MAC；L2 目的 MAC=next-hop MAC)"] --> Z
+[SW1]interface gigabitethernet 1/0/0
+[SW1-GigabitEthernet1/0/0]port link-type trunk      # 将接口配置为 Trunk 类型
+[SW1-GigabitEthernet1/0/0]port trunk allow-pass vlan 10 20   # 配置允许通过该接口的 VLAN
 ```
 
-当 L3 交换机收到一个以太网帧时，首先需要将对该帧进行归类，确定该帧属于哪个 VLAN/哪个二层广播域中（因为同一台交换机上可能同时承载很多 VLAN）。这是因为后续检查是否命中本机 MAC/泛洪/查 MAC 表操作都依赖于 VLAN 归类结果。查 MAC 表要查的是该 VLAN 的 MAC 表；泛洪是只在所属 VLAN 的端口集合里泛洪；对于命中本机 MAC 来说，是指 SVI/VLANIF 的 MAC，其实是属于某个 VLAN 的三层网关接口，也依赖 VLAN 上下文，否则就不知道该把它交给 VLANIF10 还是 VLANIF20 作为网关入口。
+SW2 的配置如下所示：
 
-当以太网帧的 VLAN 归类以及合法性检查通过后，L3 交换机会检查该帧的目的 MAC 地址。首先检查该目的 MAC 地址是一个单播 MAC 地址并且是否命中本机 MAC 地址，**<font color="red">在三层交换机里，命中本机 MAC 更准确的含义是——收到的以太帧目的 MAC 属于设备自己（或设备代表的虚拟网关），因此该帧不会按普通二层转发去查 MAC 表转发，而是进入本机终结（控制面处理）或三层转发（路由转发）的路径</font>**。
+```java{.line-numbers}
+[SW2]vlan batch 10 20                                # 批量创建 VLAN10 和 VLAN20
 
-其中最常见的就是目的 MAC 地址是 L3 交换机 SVI/VLANIF 接口的 MAC 地址，根据 Cisco 文档（如下所示），当三层交换机使用 SVI（Switch Virtual Interface，VLAN 的三层接口）时，交换机上的物理端口还是像以前一样工作——当二层端口用（**最核心，这也是使用 VLANIF 的一个前提**）。关键点是当一帧的目的 MAC 是某个 SVI 接口的 MAC（也就是该 VLAN 网关的 MAC）时，这帧会触发交换机进入要做三层处理的流程。进入三层处理后，就会做典型路由动作：把二层头去掉/提取出 IP 包、查路由表/转发表决定下一跳和出接口、然后重新封装新的二层头等。
+[SW2]interface gigabitethernet 1/0/2
+[SW2-GigabitEthernet1/0/2]port link-type access
+[SW2-GigabitEthernet1/0/2]port default vlan 10
+[SW2-GigabitEthernet1/0/2]quit
 
->When Layer 3 switches use SVIs, the physical interfaces on the switches act like they always have: as Layer 2 interfaces. That is, the physical interfaces receive Ethernet frames. The switch learns the source MAC address of the frame, and the switch forwards the frame based on the destination MAC address. To perform routing, any Ethernet frames destined for any of the SVI interface MAC addresses trigger the processing of the Layer 3 switching logic, resulting in normal routing actions like stripping data-link headers, making a routing decision, and so on.
+[SW2]interface gigabitethernet 1/0/3
+[SW2-GigabitEthernet1/0/3]port link-type access
+[SW2-GigabitEthernet1/0/3]port default vlan 20
+[SW2-GigabitEthernet1/0/3]quit
 
-另外需要注意的是，如果 L3 交换机的端口在数据转发意义上是二层转发口，平时并不会作为网关被主机当作下一跳，所以正常业务流量几乎不会把目的 MAC 指向某个二层口的 MAC 地址。二层口收到的帧通常是目的 MAC 不是本机，然后查 VLAN 内的 MAC 表转发/泛洪（MAC 表条目是 **`MAC + VLAN + 出接口`** 这种结构）。
+[SW2]interface gigabitethernet 1/0/0
+[SW2-GigabitEthernet1/0/0]port link-type trunk
+[SW2-GigabitEthernet1/0/0]port trunk allow-pass vlan 10 20
+[SW2-GigabitEthernet1/0/0]quit
+```
 
-在命中本机 MAC 地址后，需要检查是否需要本机终结处理，**<font color="red">本机终结处理是指入站帧/包被设备判定为以本设备为最终目的地，因此不再作为转发（transit/forwarding）流量继续送往其他出接口，而是被送入设备的控制平面/主机协议栈（CPU/RE）处理</font>**，处理结果通常是消费该报文并生成响应报文（例如 ARP Reply、ICMP Echo Reply 等）。通常当目的 IP 是设备本机地址，比如 SVI/VLANIF、三层口、Loopback、虚拟网关 IP 等时，就会触发本机终结处理，或者当二层/三层协议本身就是要由设备处理的控制类报文，比如 ICMP、ARP、SSH/Telnet 等。
+>注意，以华为 S5700 交换机为例，Trunk 类型的接口缺省时已经配置了 **`port trunk allow-pass vlan 1`** 命令，也就是说 Trunk 类型的接口缺省已允许 VLAN1 的流量通过。另外，该类型的接口缺省还配置了 **`port trunk pvid vlan 1`**，也就是将 VLAN1 指定为该接口的缺省 VLAN。这样无标记的数据帧从链路上到达该接口时，会被识别为来自 VLAN1 的流量；另外，交换机从该接口向外发送 VLAN1 的流量时，以无标记帧的形式发送。
 
-接着设备在三层转发表（FIB）中依据目的 IP 进行查表，得到转发所需的出口三层接口（例如某个 VLANIF 或某个 routed port/子接口）以及下一跳 IP。如果 L3 交换机发现匹配了一个直连网段，比如 VLANIF3 对应的网段（VLANIF3 配了 IP/掩码以后，设备的路由表里会自动出现一条直连路由，并且这条路由的出接口就是 VLANIF3），那么 L3 交换机就会知道这个包要被送进 VLAN3 这个二层广播域里。至于具体从 VLAN3 的哪个物理端口发出去，要靠二层的 **`下一跳 MAC + 端口 + VLAN`** 信息来决定。即先查找 ARP 表，得到下一跳 IP 对应的 MAC 地址，然后在 VLAN3 的 MAC 表里查找该 MAC 地址对应的物理端口，最后从该端口发出去。最后重写二层头，源 MAC 是 VLANIF3 的 MAC，目的 MAC 是下一跳的 MAC。
+完成上述配置后，使用 **`display vlan`** 命令查看 VLAN 信息，结果如下所示：
 
-#### 3.2 三层交换机 VLAN 间通信示例
+```java{.line-numbers}
+[HUAWEI]display vlan
+The total number of vlans is : 3
+
+VID          Ports                                                          
+--------------------------------------------------------------------------------
+   1         UT:GE1/0/0(U)      GE1/0/1(D)      GE1/0/4(D)      GE1/0/5(D)      
+                GE1/0/6(D)      GE1/0/7(D)      GE1/0/8(D)      GE1/0/9(D)      
+                GE1/0/10(D)     GE1/0/11(D)     GE1/0/12(D)     GE1/0/13(D)     
+                GE1/0/14(D)     GE1/0/15(D)     GE1/0/16(D)     GE1/0/17(D)     
+                GE1/0/18(D)     GE1/0/19(D)     GE1/0/20(D)     GE1/0/21(D)     
+                GE1/0/22(D)     GE1/0/23(D)     GE1/0/24(D)     GE1/0/25(D)     
+                GE1/0/26(D)     GE1/0/27(D)     GE1/0/28(D)     GE1/0/29(D)     
+                GE1/0/30(D)     GE1/0/31(D)     GE1/0/32(D)     GE1/0/33(D)     
+                GE1/0/34(D)     GE1/0/35(D)     GE1/0/36(D)     GE1/0/37(D)     
+                GE1/0/38(D)     GE1/0/39(D)     GE1/0/40(D)     GE1/0/41(D)     
+                GE1/0/42(D)     GE1/0/43(D)     GE1/0/44(D)     GE1/0/45(D)     
+                GE1/0/46(D)     GE1/0/47(D)                                     
+  10         UT:GE1/0/2(U)                                                      
+             TG:GE1/0/0(U)                                                      
+  20         UT:GE1/0/3(U)                                                      
+             TG:GE1/0/0(U)                                                      
+                                                                                
+VID  Type     Status  Property  MAC-LRN STAT    BC  MC  UC  Description
+--------------------------------------------------------------------------------
+   1 common   enable  default   enable  disable FWD FWD FWD VLAN 0001           
+  10 common   enable  default   enable  disable FWD FWD FWD VLAN 0010           
+  20 common   enable  default   enable  disable FWD FWD FWD VLAN20  
+```
+
+使用 **`display port vlan`** 命令查看端口 VLAN 信息，结果如下所示，PC1 可以正常访问 PC3，但是无法访问 PC2。
+
+```java{.line-numbers}
+[HUAWEI]display port vlan 
+Port                    Link Type    PVID  Trunk VLAN List                      
+---------------------------------------------------------------------
+GE1/0/0                 trunk           1  1 10 20                                                       
+GE1/0/1                 access          1  --                                                             
+GE1/0/2                 access         10  --                                                              
+GE1/0/3                 access         20  -- 
+```
+
+### 2.Access 与 Trunk 类型接口深入理解
+
 
