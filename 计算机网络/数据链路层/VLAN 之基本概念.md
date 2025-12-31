@@ -333,4 +333,91 @@ GE1/0/3                 access         20  --
 
 ### 2.Access 与 Trunk 类型接口深入理解
 
+<div align="center">
+    <img src="VLAN_static//23.png" width="550"/>
+</div>
+
+交换机 SW1 及 SW2 各下挂着一台 PC（PC1 与 PC2 使用相同的 IP 网段），此外二者还通过 **`GE0/0/24`** 接口互联。现在，如上图所示，SW1 的 **`GE0/0/1`** 及 **`GE0/0/24`** 都被配置为 Access 类型，并且均加入了 VLAN10，SW2 的 **`GE0/0/1`** 及 **`GE0/0/24`** 也都被配置为 Access 类型，但是加入了 VLAN20。那么 PC1 能否访问 PC2 呢？答案是否定的，原因如下所示。
+
+现在假设 PC1 发送了一个数据帧给 PC2（假设此时 PC1 已经知晓了 PC2 的 MAC 地址），这个数据帧从 PC1 的网卡发送出时显然是一个无标记帧，随后它进入 SW1 的 **`GE0/0/1`** 接口，被打上 Tag，VLAN-ID 为 10，接下来交换机在 MAC 地址表中查询这个数据帧的目的 MAC 地址（只在关联到 VLAN10 的表项中查询），找到匹配表项后将数据帧从 **`GE0/0/24`** 接口发出，由于这个接口是 Access 类型，而且最重要的是这个接口也加入了 VLAN10，因此数据帧的 Tag 被剥除然后再从该接口发出。
+
+接着 SW2 在 **`GE0/0/24`** 接口上收到这个数据帧，该帧进入交换机后被打上 Tag，VLAN-ID 为 20，然后 SW2 在 MAC 地址表中查询数据帧的目的 MAC 地址（只在关联到 VLAN20 的表项中查询），找到匹配表项后将数据帧从 **`GE0/0/1`** 口发出，此时数据帧的 Tag 被剥除。最终，PC1 发送出来数据帧是能够到达 PC2 的，反之亦然。
+
+综上所述，显然 PC1 与 PC2 是能够通信的。**<font color="red">在这个场景中，实际上 SW1 及 SW2 都只是对数据帧进行透传而已，并不涉及两个不同 VLAN 之间的通信</font>**。当然，初始时 PC1 并未知晓 PC2 的 MAC 地址，因此它需要广播一个 ARP Request 请求对方的 MAC 地址，这个广播帧会在 SW1 的 **`GE0/0/1`** 接口上到达，并且被 SW1 从所有加入 VLAN10 的接口泛洪出去，而其中的一个拷贝会在 SW2 的 **`GE0/0/24`** 接口上到达，并被后者从所有加入 VLAN20 的接口泛洪出去，其 **`GE0/0/1`** 正是这些接口中的一个，因此 PC2 可以收到该 ARP Request 帧，而它响应的 ARP Reply 帧自然也是能够到达 PC1 的。
+
+<div align="center">
+    <img src="VLAN_static//24.png" width="550"/>
+</div>
+
+现在，我们将上述场景做一点小小的改动，如下图所示，SW1 及 SW2 的 **`GE0/0/24`** 口均变成了 Trunk 类型，而且分别允许 VLAN10 及 VLAN20 的流量通过（以标记帧的形式）。经过这个改动后，PC1 与 PC2 将无法互访。以 PC1 访问 PC2 的数据帧为例，这些数据帧即便会从 SW1 的 **`GE0/0/24`** 接口发出，也必然会携带 VLAN10 的 Tag，也就是说，数据帧将以标记帧的形式在 SW2 的 **`GE0/0/24`** 接口上到达，而 SW2 的 **`GE0/0/24`** 却并未允许 VLAN10 的流量通过，因此数据帧被丢弃。**<font color="red">即便是该接口允许 VLAN10 的流量通过，数据帧在进入 SW2 内部后（携带的 VLAN-ID 为 10）也依然无法从 **`GE0/0/1`** 接口发出，因为 **`GE0/0/1`** 接口加入的是 VLAN20</font>**，这是典型的 VLAN 跨交换机实现的示例。
+
+### 3.Hybrid 接口配置
+
+Hybrid（混杂）是一种特殊的二层接口类型。Hybrid 接口也能够承载多个 VLAN 的数据帧，而且**可以灵活地指定特定 VLAN 的流量从该接口发送出去时是否携带 Tag**。另一方面，Hybrid 接口还能用于部署基于 IP 地址的 VLAN 规划。
+
+#### 3.1 Hybrid 接口用于连接 PC
+
+在下图中，PC1 连接在 SW1 的 **`GE0/0/1`** 接口上，SW1 的 **`GE0/0/15`** 接口则连接着一个交换网络。现在，SW1 通过 Hybrid 接口为 PC1 提供接入服务，它的配置如下：
+
+<div align="center">
+    <img src="VLAN_static//25.png" width="450"/>
+</div>
+
+```java{.line-numbers}
+[SW1]interface GigabitEthernet 0/0/1
+[SW1-GigabitEthernet0/0/1]port link-type hybrid
+```
+
+以华为 S5700 交换机为例，**<font color="red">接口缺省即为该类型，而且缺省将 VLAN1 设置为 PVID</font>**（缺省已经配置了命令：**`port hybrid pvid vlan 1`**），**<font color="red">并已经允许 VLAN1 的流量以无标记的形式通过该接口</font>**（缺省已配置了命令：**`port hybrid untagged vlan 1`**）。
+
+因此在这个场景中完成上述配置后，PC1 即可与 SW1 所连接的其他 VLAN1 的设备进行通信。此时 PC1 被认为属于 VLAN1。PC1 发出的数据帧为无标记帧，SW1 在其 **`GE0/0/1`** 接口上收到该帧后，为其打上缺省 VLAN（VLAN1） 的 Tag，而由于 VLAN1 是该接口允许通过的 VLAN-ID，因此这个数据帧会被交换机接收。
+
+如果期望将 PC1 规划在 VLAN10 中，而不是 VLAN1 中，那么 SW1 的配置修改如下：
+
+```java{.line-numbers}
+[SW1]interface GigabitEthernet 0/0/1
+[SW1-GigabitEthernet0/0/1]port link-type hybrid
+[SW1-GigabitEthernet0/0/1]port hybrid pvid vlan 10
+[SW1-GigabitEthernet0/0/1]port hybrid untagged vlan 10
+```
+
+在以上配置中，**`port hybrid pvid vlan 10`** 命令用于将接口的 PVID 修改为 10，这样当该接口收到无标记帧时，就会认为这些帧属于 VLAN10；而 **`port hybrid untagged vlan 10`** 命令则用于将该接口加入 VLAN10（也就是将 VLAN10 添加到接口允许通过的 VLAN-ID 列表中），使得 PC1 所发送的数据帧能够进入 GE0/0/1 接口从而进入交换机内部。**<font color="red">另外，这条命令还使得交换机在从 `GE0/0/1` 接口向外发送 VLAN10 的数据帧时，以无标记帧的方式发送</font>**。完成上述配置后，PC1 被认为属于 VLAN10，并且能够与 SW1 所连接的其他 VLAN10 的设备进行通信。
+
+#### 3.2 Hybrid 接口用于连接交换机
+
+在上图中，SW1 及 SW2 分别连接着 PC1 及 PC2，这两台交换机的 **`GE0/0/1`** 接口均被配置为 Access 类型，并且都加入了 VLAN10。现在 SW1 的 **`GE0/0/15`** 被配置为 Trunk 类型，并且放通了 VLAN10：
+
+<div align="center">
+    <img src="VLAN_static//26.png" width="550"/>
+</div>
+
+而 SW2 的 **`GE0/0/15`** 接口如果配置为 Hybrid 类型（纯粹为了讲解 Hybrid 的配置而设计，通常链路两端的接口类型会配置为一致），该如何配置才能使得 PC1 与 PC2 可正常通信？由于对端接口（SW1 的 **`GE0/0/15`**）以标记帧的方式发送 VLAN10 的数据帧，因此 SW2 的 **`GE0/0/15`** 接口也必须将 VLAN10 的流量以标记帧的方式处理：
+
+```java{.line-numbers}
+[SW2-GigabitEthernet0/0/15]port link-type hybrid
+[SW2-GigabitEthernet0/0/15]port hybrid tagged vlan 10
+```
+
+在以上配置中，**`port hybrid tagged vlan 10`** 命令用于将 **`GE0/0/15`** 接口加入 VLAN10，并且 VLAN 的数据帧以标记帧方式通过该接口。如果 SW2 不这么配置，SW2 通过 **`GE0/0/15`** 接口发送一个无标记帧（比如 ARP Reply）到 SW1 的 **`GE0/0/15`** 接口上时，由于 SW1 的 **`GE0/0/15`** 接口默认 PVID 为 VLAN1，因此该无标记帧会被打上 VLAN1 的 Tag，那么此无标记帧最终无法转发给 PC1（PC1 位于 VLAN10）。
+
+<div align="center">
+    <img src="VLAN_static//27.png" width="500"/>
+</div>
+
+现在考虑另外一种情况，如上图所示，SW1 左侧连接着 VLAN10、20、1000 这 3 个 VLAN，现在 SW1 的 **`GE0/0/15`** 接口配置如下：
+
+```java{.line-numbers}
+[SW1-GigabitEthernet0/0/15]port link-type trunk
+[SW1-GigabitEthernet0/0/15]port trunk allow-pass vlan 10 20 1000
+[SW1-GigabitEthernet0/0/15]port trunk pvid vlan 1000
+```
+
+当 SW1 从 **`GE0/0/15`** 往外发送数据帧时，对于 VLAN10 及 VLAN20 的数据帧均以标记帧的形式发送，而对于 VLAN1000 的数据则采用无标记帧的形式。若 SW2 采用 Hybrid 接口与其对接，此时该接口的配置应如下：
+
+```java{.line-numbers}
+[SW2-GigabitEthernet0/0/15]port link-type hybrid
+[SW2-GigabitEthernet0/0/15]port hybrid tagged vlan 10 20
+[SW2-GigabitEthernet0/0/15]port hybrid pvid vlan 1000
+[SW2-GigabitEthernet0/0/15]port hybrid untagged vlan 1000
+```
 
