@@ -421,3 +421,108 @@ Hybrid（混杂）是一种特殊的二层接口类型。Hybrid 接口也能够�
 [SW2-GigabitEthernet0/0/15]port hybrid untagged vlan 1000
 ```
 
+### 4 基于 IP 地址划分的 VLAN
+
+#### 4.1 概述
+
+通常在一个典型的局域网中，我们多采用基于接口划分 VLAN 的方式，也就是通过命令将交换机的接口加入某个或者某些特定的 VLAN。当然，除了可基于接口划分 VLAN，业界还存在基于 MAC 地址划分 VLAN、基于 IP 地址划分 VLAN 等方式。
+
+在下图所示的网络中，SW2 下挂着三台服务器，其中 SW2 连接 Server1 及 Server2 的接口是 Access 类型，而且加入了 VLAN1；连接 Server3 的接口也是 Access 类型，但是加入 VLAN30。而 SW2 的上联接口（连接 SW1 的接口）则是 Trunk 类型，该接口在其允许通过的 VLAN-ID 列表中添加了 VLAN1 及 VLAN30，并且将 VLAN1 指定为缺省 VLAN。
+
+如此一来，**<font color="red">SW1 将会在其 **`GE6/0/15`** 接口上收到三种类型的上行流量，分别是源地址为 **`10.10.10.0/24`** 网段的无标记帧、源地址为 **`10.10.20.0/24`** 网段的无标记帧，以及 VLAN30 的标记帧</font>**。现在网络的需求是，将来自这三个网段的数据帧在 SW1 上根据规划对应到相应的 VLAN，并且 SW1 转发这些帧给 CoreSwitch 时都携带 Tag。由于某种原因，SW2 的配置无法变更，因此要求只能在 SW1 上完成配置。
+
+<div align="center">
+    <img src="VLAN_static//28.png" width="500"/>
+</div>
+
+实际上，网络的需求是在 SW1 上完成相应的配置使得其在 **`GE6/0/15`** 接口上收到源地址为 **`10.10.10.0/24`** 网段的数据时，将其识别为 VLAN10 的数据，收到源地址为 **`10.10.20.0/24`** 网段的数据时，将其识别为 VLAN20 的数据，而 VLAN30 的数据则需以标记帧的形式处理。因此本例需在 SW1 上部署基于 IP 地址的 VLAN 划分。**<font color="red">另外，为了让 SW2 顺利地接收相关数据帧，SW1 的 **`GE6/0/15`** 接口在发送 VLAN10 及 VLAN20 的数据帧时不能打标记，而在发送 VLAN30 的数据帧时则需要打标记</font>**。
+
+#### 4.2 配置实验
+
+接下来做一个实验，来验证上述需求能否通过基于 IP 地址划分 VLAN 的方式实现。实验的拓扑图如下所示：
+
+<div align="center">
+    <img src="VLAN_static//29.png" width="550"/>
+</div>
+
+>上述拓扑图中，SW2/AR1 是 CE6800 交换机，SW1 是 S5700 交换机。CE6800/CE12800 的交换机的 **`ip-subnet-vlan`** 并不会对数据帧做按子网归类，
+
+SW2 的配置如下所示，将连接 Server1 及 Server2 的接口配置为 Access 类型并加入 VLAN1，将连接 Server3 的接口配置为 Access 类型并加入 VLAN30，将连接 SW1 的接口配置为 Trunk 类型并允许 VLAN1 及 VLAN30 的流量通过，并且 VLAN1 的帧不带标记，将 VLAN30 的帧带标记：
+
+```java{.line-numbers}
+vlan batch 30
+interface GE1/0/0
+ undo shutdown
+interface GE1/0/1
+ undo shutdown
+interface GE1/0/2
+ undo shutdown
+ port default vlan 30
+interface GE1/0/3
+ undo shutdown
+ port link-type trunk
+ port trunk allow-pass vlan 30
+```
+
+SW1 将连接 SW2 的接口配置为 Hybrid 类型，并且将 VLAN10 及 VLAN20 的流量以无标记帧的形式通过该接口，将 VLAN30 的流量以标记帧的形式通过该接口，同时分别将 **`10.10.10.0/24`** 子网映射到 VLAN10，将 **`10.10.20.0/24`** 子网映射到 VLAN20，将 **`10.10.30.0/24`** 子网映射到 VLAN30。最后在 SW1 的 **`GE0/0/1`** 上启用基于 IP 地址划分 VLAN 的功能（只能在 Hybrid 类型的接口上启用该功能），**<font color="red">最后配置基于 MAC 地址划分 VLAN 和基于子网划分 VLAN 时，配置接口优先基于 MAC 地址划分 VLAN 还是基于子网划分 VLAN。缺省情况下，基于 MAC 地址划分 VLAN 优先级高于基于子网划分 VLAN 优先级</font>**。
+
+具体配置如下所示：
+
+```java{.line-numbers}
+vlan batch 10 20 30
+vlan 10
+ ip-subnet-vlan 1 ip 10.10.10.0 255.255.255.0 priority 2
+vlan 20
+ ip-subnet-vlan 1 ip 10.10.20.0 255.255.255.0 priority 3
+vlan 30
+ ip-subnet-vlan 1 ip 10.10.30.0 255.255.255.0 priority 4
+interface GigabitEthernet0/0/1
+ port hybrid tagged vlan 30
+ port hybrid untagged vlan 10 20
+ vlan precedence ip-subnet-vlan
+ ip-subnet-vlan enable
+interface GigabitEthernet0/0/2
+ port link-type trunk
+ port trunk allow-pass vlan 10 20 30
+```
+
+最后 AR1 的配置如下所示，设置了 3 个 VLANIF 接口，分别对应 VLAN10、VLAN20 及 VLAN30，并为其配置了相应的 IP 地址，以便 VLAN 10-30 的主机能够通过 AR1 进行三层通信：
+
+```java{.line-numbers}
+vlan batch 10 20 30
+interface Vlanif10
+ ip address 10.10.10.254 255.255.255.0
+interface Vlanif20
+ ip address 10.10.20.254 255.255.255.0
+interface Vlanif30
+ ip address 10.10.30.254 255.255.255.0
+interface GE1/0/0
+ undo shutdown
+ port link-type trunk
+ port trunk allow-pass vlan 10 20 30
+```
+
+经过上述配置后，PC1、PC2 及 PC3 均能够与 AR1 上对应 VLANIF 接口的网关 IP 进行通信，并且可以互相之间进行通信，从而验证了基于 IP 地址划分 VLAN 的功能得以实现。AR1 上学习到的 MAC 地址表项如下所示：
+
+```java{.line-numbers}
+[HUAWEI]display mac-address 
+Flags: * - Backup  
+BD   : bridge-domain   Age : dynamic MAC learned time in seconds
+-------------------------------------------------------------------------------
+MAC Address    VLAN/VSI   Learned-From        Type                Age
+-------------------------------------------------------------------------------
+5489-980d-4fe1 10/-          GE1/0/0             dynamic               -
+5489-981f-6a23 20/-          GE1/0/0             dynamic               -
+5489-98be-2791 30/-          GE1/0/0             dynamic               -
+-------------------------------------------------------------------------------
+Total items: 3
+```
+
+PC1 第一次去访问 PC3（**`10.10.30.1`**）时，由于此地址不在本网段，因此需要将数据包先发给网关（把下一跳定为默认网关 **`10.10.10.254`**），但是此时 PC1 的 ARP 表里还没有网关 **`10.10.10.254`** 的 MAC。因此需要先把网关的 MAC 地址解析出来。于是 PC1 发出一个 ARP Request 广播帧，ARP 内容里源 IP 是 **`10.10.10.1`**，目标 IP 是 **`10.10.10.254`**。
+
+这个广播帧进入 SW2 后，因为 PC1 接入口是 access（默认 VLAN1），所以 SW2 把它当成 VLAN1 的二层广播来处理；再从 SW2 上联到 SW1 的 trunk 口转发时，这帧仍以无标签的形式到达 SW1 的 **`GE0/0/1`**。
+
+接着 SW1 在 **`GE0/0/1`** 上启用了 **`ip-subnet-vlan`** 并设置了 **`vlan precedence ip-subnet-vlan`**，此时 SW1 读取到 ARP **`sender IP=10.10.10.1`**，于是 SW1 会把这帧归类为 VLAN10 的广播帧。这个 ARP 广播只能在 VLAN10 的广播域里泛洪（flood），不会被发到 VLAN20/VLAN30 的端口成员上。而 SW1 的上联口 **`GE0/0/2`** 是 trunk 且允许 VLAN10，于是这帧会从 **`GE0/0/2`** 出口，然后发往 AR1。
+
+AR1 收到这帧后，看到 VLAN 10，会把它交给 Vlanif10 处理；由于 ARP 请求的 target IP 正是 **`10.10.10.254`**（Vlanif10 的地址），需要 AR1 进行本机终结，AR1 就回一个 ARP Reply 单播给 PC1。
+

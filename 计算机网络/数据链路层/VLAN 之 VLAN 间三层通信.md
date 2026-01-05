@@ -1,6 +1,6 @@
-## 七、VLAN 间的三层通信
+# VLAN 间的三层通信
 
-### 1.通过多臂路由器实现 VLAN 间的三层通信
+## 一、通过多臂路由器实现 VLAN 间的三层通信
 
 如下图所示，3 台交换机和 4 台 PC 组成了一个交换网络，在此网络上划分了两个基于端口的 VLAN，分别为 VLAN10 和 VLAN20，其中 PC1 和 PC2 属于 VLAN10，PC3 和 PC4 属于 VLAN20。
 
@@ -36,11 +36,19 @@ PC4 的 Ethernet0/0/1 接口在收到 S3 转发过来的 Untagged Y 帧后，会
 
 至此，源于 PC1 的三层 IP 模块的 IP 报文 P 便成功地到达了 PC4 的三层 IP 模块，属于 VLAN10 的 PC1 与属于 VLAN20 的 PC4 之间成功地进行了一次三层通信。
 
-### 2.通过单臂路由器实现 VLAN 间的三层通信
+## 二、通过单臂路由器实现 VLAN 间的三层通信
 
-VLAN 间的三层通信可以通过多臂路由器来实现，但这种实现方法面临的一个主要问题是：**<font color="red">每一个 VLAN 都需要占用路由器上的一个物理接口</font>**（也就是说，每一个 VLAN 都需要路由器从一个物理接口伸出一只手臂来）。如果 VLAN 数量众多，就需要占用大量的路由器接口。事实上，路由器的物理接口资源是非常宝贵而稀缺的，一台路由器上的物理接口数量通常都是非常有限的，无法支持数量较多的 VLAN。实际的网络部署中，几乎都不会通过多臂路由器来实现 VLAN 间的三层通信。
+### 1.子接口基本概念
+
+VLAN 间的三层通信可以通过多臂路由器来实现，但这种实现方法面临的一个主要问题是：**<font color="red">每一个 VLAN 都需要占用路由器上的一个物理接口</font>**（也就是说，每一个 VLAN 都需要路由器从一个物理接口伸出一只手臂来）。如果 VLAN 数量众多，就需要占用大量的路由器接口。事实上，路由器的物理接口资源是非常宝贵而稀缺的，无法支持数量较多的 VLAN。实际的网络部署中，几乎都不会通过多臂路由器来实现 VLAN 间的三层通信。
 
 为了节省路由器的物理接口资源，我们还可以通过单臂路由器的方法来实现 VLAN 间的三层通信。采用这种方法时，仍然必须对路由器的物理接口进行子接口（Sub-Interface）划分。**<font color="red">一个路由器的物理接口可以划分为多个子接口，不同的子接口可以对应于不同的 VLAN，这些子接口的 MAC 地址均为衍生出它们的那个物理接口的 MAC 地址，但是它们的 IP 地址各不相同</font>**。一个子接口的 IP 地址应当属于该子接口所对应的那个 VLAN 的缺省网关地址。子接口是一个逻辑上的概念，所以子接口也常常被称为虚接口。
+
+假设在路由器的物理接口 **`GE0/0/1`** 上创建两个子接口：**`GE0/0/1.10`** 及 **`GE0/0/1.20`**，这两个子接口的状态与物理接口 **`GE0/0/1`** 息息相关，**<font color="red">当 **`GE0/0/1`** 被关闭或者发生故障时，基于该物理接口所创建的所有子接口都将无法正常工作</font>**。请留意子接口的标识，以 **`GE0/0/1.10`** 为例，**`GE0/0/1`** 指的是物理接口类型及编号，而小数点 . 后面的数字则是子接口的编号。
+
+以华为 AR2200 路由器为例，在一个千兆以太网接口上最多可以创建 4096 个子接口。值得注意的是，**子接口被创建后，需指定对接的 VLAN-ID，当该子接口向外发送数据帧时，数据帧将会被打上相应 VLAN 的 Tag**。为了能够与交换机顺利对接，路由器 **`GE0/0/1`** 对端的交换机接口必须配置为 Trunk 类型（或 Hybrid 类型），**<font color="red">而且要放通相应的 VLAN 并以标记帧的形式处理相关数据</font>**。路由器会把子接口当成是一个普通接口来对待。
+
+### 2.子接口实际案例
 
 如下图所示，路由器 R 的物理接口 **`GE1/0/0`** 被划分成了两个子接口，分别为 **`GE1/0/0.1`** 和 **`GE1/0/0.2`**。**`GE1/0/0.1`** 对应于 VLAN10，**`GE1/0/0.2`** 对应于 VLAN20。**`GE1/0/0.1`** 的 IP 地址为 **`192.168.100.1/24`**，也就是 VLAN10 的缺省网关地址；**`GE1/0/0.2`** 的 IP 地址为 **`192.168.200.1/24`**，也就是 VLAN20 的缺省网关地址。子接口 **`GE1/0/0.1`** 的 MAC 地址和 **`GE1/0/0.2`** 的 MAC 地址是一样的，都是物理接口 **`GE1/0/0`** 的 MAC 地址。
 
@@ -72,9 +80,9 @@ PC4 的 Ethernet0/0/1 接口在收到 S3 转发过来的 Untagged Y 帧后，会
 
 至此，源于 PC1 的三层 IP 模块的 IP 报文 P 便成功地到达了 PC4 的三层 IP 模块，属于 VLAN10 的 PC1 与属于 VLAN20 的 PC4 之间成功地进行了一次三层通信。
 
-### 3.通过三层交换机实现 VLAN 间的三层通信
+## 三、通过三层交换机实现 VLAN 间的三层通信
 
-#### 3.1 三层交换机讲解
+### 1 三层交换机讲解
 
 VLAN 间的三层通信可以通过多臂路由器或单臂路由器来实现。通过单臂路由器来实现时，可以节约路由器的物理接口资源，但是，这种方式也有其不足之处。如果 VLAN 的数量众多，VLAN 间的通信流量很大时，单臂链路所能提供的带宽就难以有效支撑这些通信流量。另外，如果单臂链路一旦发生了中断，那么所有的 VLAN 间的通信也会因此而中断。为此，人们引入了一种被称为"三层交换机"的网络设备，并通过三层交换机来更经济、更快速、更可靠地实现 VLAN 间的三层通信。在说明什么是三层交换机之前，我们必须先解释一下关于"二层口"和"三层口"的概念。
 
@@ -149,7 +157,7 @@ flowchart TD
 
 接着设备在三层转发表（FIB）中依据目的 IP 进行查表，得到转发所需的出口三层接口（例如某个 VLANIF 或某个 routed port/子接口）以及下一跳 IP。如果 L3 交换机发现匹配了一个直连网段，比如 VLANIF3 对应的网段（VLANIF3 配了 IP/掩码以后，设备的路由表里会自动出现一条直连路由，并且这条路由的出接口就是 VLANIF3），那么 L3 交换机就会知道这个包要被送进 VLAN3 这个二层广播域里。至于具体从 VLAN3 的哪个物理端口发出去，要靠二层的 **`下一跳 MAC + 端口 + VLAN`** 信息来决定。即先查找 ARP 表，得到下一跳 IP 对应的 MAC 地址，然后在 VLAN3 的 MAC 表里查找该 MAC 地址对应的物理端口，最后从该端口发出去。最后重写二层头，源 MAC 是 VLANIF3 的 MAC，目的 MAC 是下一跳的 MAC。
 
-#### 3.2 三层交换机 VLAN 间通信示例
+### 2 三层交换机 VLAN 间通信示例
 
 <div align="center">
     <img src="VLAN_static//20.png" width="700"/>
@@ -165,7 +173,7 @@ flowchart TD
 
 注意，在上图中，交换机的 Access 端口有：S2 的 D1 端口和 D2 端口，S3 的 D1 端口和 D2 端口。交换机的 Trunk 端口有：S2 的 D3 端口，S3 的 D3 端口，S1 的 **`GE1/0/0`** 端口和 **`GE2/0/0`** 端口。
 
-##### 3.2.1 同 VLAN 内的二层通信
+#### 2.1 同 VLAN 内的二层通信
 
 现在，我们先来看一下三层交换机是如何实现同一 VLAN 内的二层通信的。如上图所示，假设 PC1 需要发送一个 ARP 请求，去询问 PC3 的 MAC 地址是多少，也就是询问 IP 地址 **`192.168.100.30`** 所对应的 MAC 地址是多少。我们需要描述清楚这个 ARP 请求是如何到达 PC3 的。
 
@@ -183,7 +191,7 @@ PC3 的 Ethernet0/0/1 接口是一个三层口，而 Untagged X 又是一个广�
 
 至此，我们可以看到，属于 VLAN10 的 PC1 与同属于 VLAN10 的 PC3 已经成功地进行了一次 VLAN 内的二层通信。这二层通信利用了 S1 的两个混合口 **`GE1/0/0`** 和 **`GE2/0/0`** 之间的二层转发通道。
 
-##### 3.2.2 不同 VLAN 间的三层通信
+#### 2.2 不同 VLAN 间的三层通信
 
 如上图所示，我们将描述清楚 PC1 是如何将一个名为 P 的 IP 报文成功地发送给 PC4 的。
 
@@ -208,3 +216,213 @@ S1 的 IP 模块接收到 P 后，会根据 P 的目的 IP 地址 **`192.168.200
 然后，S1 将 Tagged Y 帧从 **`GE2/0/0`** 端口发送出去，该 Tagged Y 帧会到达交换机 S3 的 D2 端口。然后，S3 会将 Tagged Y 帧的 Tag 去掉，然后将它从自己的 D2 端口转发出去。
 
 PC4 的 Ethernet0/0/1 接口在收到 S3 转发过来的 Untagged Y 帧后，会将 Untagged Y 帧的目的 MAC 地址与自己的 MAC 地址进行比较。由于这两个 MAC 地址是相同的，所以 PC4 的 Ethernet0/0/1 接口会根据这个帧的类型字段值 0x0800 将这个帧的载荷数据（也就是 P）上送给 PC4 的位于三层的 IP 模块。
+
+#### 2.3 VLANIF 和子接口之间的区别
+
+##### 2.3.1 VLANIF 适用场景
+
+VLANIF 是绑定到某个 VLAN（二层广播域）上的三层逻辑接口，用来给该 VLAN 提供网关、参与三层转发（VLAN 间路由、设备管理 IP 等）。使用 VLANIF 的前置条件是该设备必须有对应 VLAN 的二层承载和广播域。
+
+VLANIF 的适用前提是设备具备二层交换能力，也就是能创建 VLAN、端口能加入和关联 VLAN，能为端口设置 **`trunk/hybrid/access`** 类型，并且至少有 1 个加入该 VLAN 的物理端口处于启用/UP 状态。总结就是以下 2 点：
+
+- **<font color="red">VLANIF 接口对应的 VLAN，必须已经创建</font>**；
+- **<font color="red">必须有 Up 的物理接口或 Eth-Trunk 接口已经加入 VLANIF 对应的 VLAN</font>**。
+
+相反，如果发现 VLANIF 接口的状态是 Down，那通常原因如下所示：
+
+- 接口与 VLAN 没有关联，即没有接口加入 VLAN：使用命令 **`display vlan vlan-id [ verbose | to vlan-id2 ]`** 查看该 VLAN 下是否有接口，注意 **`port trunk/hybrid pvid vlan vlan-id`** 仅表示在 Trunk/Hybrid 接口上配置 PVID，并没有将接口加入 VLAN；
+- 加入 VLAN 的各接口的物理状态全是 Down：排查加入 VLAN 的各接口 Down 的故障，只要有一个接口物理状态是 Up，VLANIF 接口状态就是 Up；
+- VLANIF 接口下没有配置 IP 地址；
+- VLANIF 接口被 Shutdown。
+
+下面讲解一下如何关联接口和 VLAN：
+
+- **Access 端口关联 VLAN**：在 Access 端口上使用命令 **`port default vlan vlan-id`**，配置接口的缺省 VLAN，并将接口加入到指定的 VLAN 中；
+- **Trunk 端口关联 VLAN**：在 Trunk 端口上使用命令 **`port trunk allow-pass vlan { { vlan-id1 [ to vlan-id2 ] } &<1-40> | all }`**，将接口加入到指定的 VLAN 中；
+- **Hybrid 端口关联 VLAN**：在 Hybrid 端口上使用命令 **`port hybrid untagged vlan { { vlan-id1 [ to vlan-id2 ] } &<1-10> | all }`**，将 Hybrid 接口以 Untagged 方式加入 VLAN。或者使用命令 **`port hybrid tagged vlan { { vlan-id1 [ to vlan-id2 ] } &<1-10> | all }`**，将 Hybrid 接口以 Tagged 方式加入 VLAN。
+
+##### 2.3.2 子接口适用场景
+
+子接口是把一条物理三层以太网口逻辑切分成多个三层子接口，每个子接口终结一个 VLAN Tag（802.1Q），并在子接口上配置 IP，来实现 VLAN 间三层互通。当设备通过三层以太网接口连接不同 VLAN/不同网段用户时，应在该三层口上配置 **`dot1q termination`** 和子接口 IP，从而实现 VLAN 间三层通信。
+
+子接口的适用前提是 **<font color="red">上联是三层以太网接口（route port），接口本身不作为二层 VLAN 成员（或者设备根本不支持把该口切为二层口），仍需要在一条链路上承载多个 VLAN 的业务</font>**（典型的如单臂路由）。
+
+## 四、VLAN 间通信实验
+
+### 1.VLANIF 和子接口区别实验拓扑
+
+<div align="center">
+    <img src="VLAN_static//30.png" width="450"/>
+</div>
+
+实验使用的网络拓扑图如上所示，其中 SW 是一台普通的二层交换机，AR 是一台路由器，其端口 **`Ethernet0/0/0`** 是一个普通的二层口，PC1 和 PC2 分别连接在 SW 的两个 Access 端口上。PC1 和 PC2 分别被划分进了 VLAN10 和 VLAN20。其中 **`Ethernet0/0/0`** 接口的信息如下所示，可以看到 **`Ethernet0/0/0`** 接口的是 Switch Port，是一个标准的二层口，满足 VLANIF 的适用前提。
+
+```java{.line-numbers}
+[Huawei]display interface e0/0/0
+Ethernet0/0/0 current state : UP
+Line protocol current state : UP
+Description:HUAWEI, AR Series, Ethernet0/0/0 Interface
+Switch Port, PVID :    1, TPID : 8100(Hex), The Maximum Frame Length is 1628
+IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is 00e0-fc60-149e
+Last physical up time   : 2026-01-05 13:33:30 UTC-08:00
+Last physical down time : 2026-01-05 13:33:25 UTC-08:00
+Current system time: 2026-01-05 13:41:16-08:00
+Port Mode: COMMON COPPER
+Speed :  100,  Loopback: NONE
+Duplex: FULL,  Negotiation: ENABLE
+Mdi   : AUTO
+Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+Last 300 seconds output rate 472 bits/sec, 0 packets/sec
+Input peak rate 608 bits/sec,Record time: 2026-01-05 13:34:36
+Output peak rate 1024 bits/sec,Record time: 2026-01-05 13:34:36
+```
+
+二层交换机 SW 的配置如下所示：
+
+```java{.line-numbers}
+vlan batch 10 20
+interface Vlanif1
+interface GigabitEthernet0/0/1
+ port link-type access
+ port default vlan 10
+interface GigabitEthernet0/0/2
+ port link-type access
+ port default vlan 20
+interface GigabitEthernet0/0/3
+ port link-type trunk
+ port trunk allow-pass vlan 10 20
+```
+
+路由器 AR 的配置如下所示：
+
+```java{.line-numbers}
+vlan batch 10 20
+interface Vlanif10
+ ip address 192.168.10.254 255.255.255.0 
+interface Vlanif20
+ ip address 192.168.20.254 255.255.255.0 
+interface Ethernet0/0/0
+ port link-type trunk
+ port trunk allow-pass vlan 10 20
+```
+
+在经过上述配置之后，可以实现 PC1 和 PC2 之间的 VLAN 间通信。接下来，我们将把路由器 AR 的 **`Ethernet0/0/0`** 接口修改为 **`G0/0/1`**，其它保持不变，此时 **`G0/0/1`** 的接口信息如下，可以看到 **`G0/0/1`** 接口的是 Route Port，是一个三层口。
+
+```java{.line-numbers}
+[Huawei]display interface g0/0/1
+GigabitEthernet0/0/1 current state : UP
+Line protocol current state : DOWN
+Description:HUAWEI, AR Series, GigabitEthernet0/0/1 Interface
+Route Port,The Maximum Transmit Unit is 1500
+Internet protocol processing : disabled
+IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is 00e0-fc60-149f
+Last physical up time   : 2026-01-05 14:00:51 UTC-08:00
+Last physical down time : 2026-01-05 13:33:25 UTC-08:00
+Current system time: 2026-01-05 14:02:03-08:00
+```
+
+此时路由器 AR 上的 **`Vlanif10`** 和 **`Vlanif20`** 的状态如下所示，可以看到 **`Vlanif10`** 和 **`Vlanif20`** 的状态都是 Down，这样就验证了前面所说的，**<font color="red">VLANIF 的适用前提是设备具备二层交换能力，并且至少有 1 个加入该 VLAN 的物理端口处于启用/UP 状态</font>**。
+
+```java{.line-numbers}
+[Huawei]display interface vlanif10
+Vlanif10 current state : DOWN
+Line protocol current state : DOWN
+Description:HUAWEI, AR Series, Vlanif10 Interface
+Route Port,The Maximum Transmit Unit is 1500
+Internet Address is 192.168.10.254/24
+IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is 00e0-fc60-149e
+Current system time: 2026-01-05 14:03:09-08:00
+    Input bandwidth utilization  : --
+    Output bandwidth utilization : --
+
+[Huawei]display interface vlanif20
+Vlanif20 current state : DOWN
+Line protocol current state : DOWN
+Description:HUAWEI, AR Series, Vlanif20 Interface
+Route Port,The Maximum Transmit Unit is 1500
+Internet Address is 192.168.20.254/24
+IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is 00e0-fc60-149e
+Current system time: 2026-01-05 14:05:03-08:00
+    Input bandwidth utilization  : --
+    Output bandwidth utilization : --
+```
+
+### 2.路由器子接口实现 VLAN 间通信
+
+<div align="center">
+    <img src="VLAN_static//31.png" width="450"/>
+</div>
+
+实验的网络拓扑图如上所示，其中 SW 是一台普通的二层交换机，AR 是一台路由器，其端口 **`GigabitEthernet0/0/0`** 是一个三层口，PC1 和 PC2 分别连接在 SW 的两个 Access 端口上，分别属于 VLAN10 和 VLAN20。
+
+路由器 AR 的配置如下所示，注意在配置子接口时，需要配置 **`arp broadcast enable`**，因为默认情况下，**`dot1q`** 终结子接口的 ARP 广播能力是不使能的。如果不配置这个命令，结果就是：
+
+- PC 到网关：PC 直接对网关发 **`ARP/ICMP`**，网关作为本机地址还能回应（执行本机终结），所以可以 ping 通网关；
+- PC1 到 PC2：路由器 AR 要把报文转发到 VLAN20 时，必须先在 VLAN20 里用 ARP 广播解析 PC2 的 MAC，但子接口不使能 ARP 广播时，无法泛洪 ARP 报文，转发就失败，所以 跨 VLAN 互 ping 不通；
+
+```java{.line-numbers}
+interface GigabitEthernet0/0/0.10
+ dot1q termination vid 10
+ ip address 192.168.10.254 255.255.255.0 
+ arp broadcast enable
+#
+interface GigabitEthernet0/0/0.20
+ dot1q termination vid 20
+ ip address 192.168.20.254 255.255.255.0 
+ arp broadcast enable
+```
+
+SW 的配置如下所示：
+
+```java{.line-numbers}
+vlan batch 10 20
+interface GigabitEthernet0/0/1
+ port link-type access
+ port default vlan 10
+interface GigabitEthernet0/0/2
+ port link-type access
+ port default vlan 20
+interface GigabitEthernet0/0/3
+ port link-type trunk
+ port trunk allow-pass vlan 10 20
+ ```
+
+上述配置完成之后，AR 路由器的接口 IP 信息如下所示：
+
+```java{.line-numbers}
+[Huawei]display ip interface brief 
+*down: administratively down
+^down: standby
+(l): loopback
+(s): spoofing
+The number of interface that is UP in Physical is 4
+The number of interface that is DOWN in Physical is 1
+The number of interface that is UP in Protocol is 3
+The number of interface that is DOWN in Protocol is 2
+
+Interface                         IP Address/Mask      Physical   Protocol  
+GigabitEthernet0/0/0              unassigned           up         down      
+GigabitEthernet0/0/0.10           192.168.10.254/24    up         up        
+GigabitEthernet0/0/0.20           192.168.20.254/24    up         up        
+GigabitEthernet0/0/1              unassigned           down       down      
+NULL0                             unassigned           up         up(s) 
+
+[Huawei]display ip routing-table 
+Route Flags: R - relay, D - download to fib
+------------------------------------------------------------------------------
+Routing Tables: Public
+         Destinations : 10       Routes : 10       
+
+Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface
+
+...
+   192.168.10.0/24  Direct  0    0           D   192.168.10.254  GigabitEthernet0/0/0.10
+   192.168.20.0/24  Direct  0    0           D   192.168.20.254  GigabitEthernet0/0/0.20
+...
+```
+
+最后 PC1 和 PC2 都可以访问网关，并且 PC1 和 PC2 之间也可以实现 VLAN 间通信。
+
+### 3.三层交换机 VLANIF 实现 VLAN 间通信
+
+
