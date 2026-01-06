@@ -425,4 +425,96 @@ Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface
 
 ### 3.三层交换机 VLANIF 实现 VLAN 间通信
 
+在下图中，SW1 是二层交换机，SW2 是三层交换机。SW1 下联着终端用户，上联 SW2，**<font color="red">在该网络中 SW2 作为汇聚层交换机，是终端用户的网关所在</font>**。内网为了区隔用户规划了两个 VLAN，分别是 VLAN10 及 VLAN20。 现在要完成各设备的配置，使得 VLAN10 及 VLAN20 的用户能够进行相互通信，而且都能访问 192.168.100.0/24。
+
+<div align="center">
+    <img src="VLAN_static//32.png" width="700"/>
+</div>
+
+值得注意的是，网络中一共存在三个 VLAN，分别是 VLAN10、VLAN20 及 VLAN99。其中，VLAN10 及 VLAN20 是为终端用户规划的 VLAN，而 VLAN99 则是交换机 SW2 与 Router 互联的 VLAN。为了实现 SW2 与 Router 的对接，需要将 SW2 的 **`GE0/0/2`** 接口配置为 Access 类型，并且添加到 VLAN99，同时配置交换机的 VLANIF99。
+
+在这套方案里，SW2 的 **`GE0/0/2`** 被配置为 **`access vlan 99`**，意味着这个物理口只承载 VLAN99 的二层流量，即 Router 从该口发出的无标签以太帧会被 SW2 归入 VLAN99，SW2 从 VLAN99 发向该口的帧也会以无标签形式送到 Router，因此 VLAN99 的二层广播能够在 SW2 与 Router 之间正常到达。同时，SW2 上配置 Vlanif99 的 IP 地址为 **`192.168.99.1/24`**，等价于在 VLAN99 这个二层广播域上创建了一个三层接口，使 SW2 在该广播域内拥有合法的三层地址与 **`192.168.99.0/24`** 直连网段的路由条目，从而具备在 VLAN99 上进行三层收发与转发的能力。
+
+基于这两点，当 SW2 需要把命中默认路由的报文交给下一跳 **`192.168.99.2`** 时，它能够在 VLAN99 内发起 ARP 广播解析 **`99.2`** 的 MAC 并完成二层封装，把流量真正送到 Router；同理，当 Router 需要把去往 **`192.168.10.0/24`** 或 **`192.168.20.0/24`** 的回程流量交给下一跳 **`192.168.99.1`** 时，也能在同一广播域内通过 ARP 解析到对应的 MAC 并把报文发回 SW2。**<font color="red">于是 SW2 与 Router 之间就形成了稳定可用的三层邻接关系</font>**，最终三台 PC 才能在跨网段通信时保证正向与回程路径都成立，从而实现 PC1、PC2、PC3 的互相通信。
+
+SW1 的配置如下：
+
+```java{.line-numbers}
+vlan batch 10 20
+interface GigabitEthernet0/0/1
+ port link-type trunk
+ port trunk allow-pass vlan 10 20
+interface GigabitEthernet0/0/2
+ port link-type access
+ port default vlan 10
+interface GigabitEthernet0/0/3
+ port link-type access
+ port default vlan 20
+```
+
+SW2 的配置如下：
+
+```java{.line-numbers}
+vlan batch 10 20 99
+interface Vlanif10
+ ip address 192.168.10.254 255.255.255.0 
+interface Vlanif20
+ ip address 192.168.20.254 255.255.255.0 
+interface Vlanif99
+ ip address 192.168.99.1 255.255.255.0 
+interface GigabitEthernet0/0/1
+ port link-type trunk
+ port trunk allow-pass vlan 10 20
+interface GigabitEthernet0/0/2
+ port link-type access
+ port default vlan 99
+ip route-static 0.0.0.0 0.0.0.0 192.168.99.2
+```
+
+AR 的配置如下：
+
+```java{.line-numbers}
+interface GigabitEthernet0/0/0
+ ip address 192.168.99.2 255.255.255.0 
+interface GigabitEthernet0/0/1
+ ip address 192.168.100.254 255.255.255.0 
+ip route-static 192.168.10.0 255.255.255.0 192.168.99.1
+ip route-static 192.168.20.0 255.255.255.0 192.168.99.1
+```
+
+经过上述配置之后，SW1 接口的 VLAN 信息如下所示：
+
+```java{.line-numbers}
+[Huawei]display port vlan 
+Port                    Link Type    PVID  Trunk VLAN List
+-------------------------------------------------------------------------------
+GigabitEthernet0/0/1    trunk        1     1 10 20
+GigabitEthernet0/0/2    access       10    -                                   
+GigabitEthernet0/0/3    access       20    -  
+```
+
+SW2 上的路由表如下所示，可以看到 **`192.168.10.0/24`**、**`192.168.20.0/24`** 以及 **`192.168.99.0/24`** 这三条直连路由,它们分别关联到了 VLANIF10、VLANIF20 及 VLANIF99，另外还有一条静态默认路由。接下来，解释一下第 2 条路由和第 3 条路由的区别：
+
+- **`192.168.10.0/24`** **<font color="red">是直连网段路由，用于指导如何转发去往该网段内其他主机的数据</font>**。这条路由告诉转发引擎（ASIC/FIB），如果收到一个数据包，目的 IP 属于 **`192.168.10.X`** 这个范围，那么这个包应该从 Vlanif10 接口发出去（进行二层 ARP 解析和转发）。
+- **`192.168.10.254/32`** **<font color="red">是本地主机路由，用于标识设备自身，指导发给网关本身的数据包上送 CPU 处理</font>**。这条路由告诉转发引擎，如果收到一个数据包，它的目的 IP 严格等于 **`192.168.10.254`**，不要进行转发（因为 next-hop 是 **`127.0.0.1`**）。如果不这么设计，如果没有这条 /32 指向 **`127.0.0.1`** 的路由，当 PC Ping 网关（**`192.168.10.254`**）时，交换机会查到 /24 的路由，然后试图去 ARP 解析 **`192.168.10.254`** 的 MAC 地址并转发出去。
+
+```java{.line-numbers}
+[Huawei]display ip routing-table
+Route Flags: R - relay, D - download to fib
+------------------------------------------------------------------------------
+Routing Tables: Public
+         Destinations : 9        Routes : 9        
+
+Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface
+
+        0.0.0.0/0   Static  60   0          RD   192.168.99.2    Vlanif99
+   192.168.10.0/24  Direct  0    0           D   192.168.10.254  Vlanif10
+ 192.168.10.254/32  Direct  0    0           D   127.0.0.1       Vlanif10
+   192.168.20.0/24  Direct  0    0           D   192.168.20.254  Vlanif20
+ 192.168.20.254/32  Direct  0    0           D   127.0.0.1       Vlanif20
+   192.168.99.0/24  Direct  0    0           D   192.168.99.1    Vlanif99
+   192.168.99.1/32  Direct  0    0           D   127.0.0.1       Vlanif99
+```
+
+
 
