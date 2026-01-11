@@ -208,7 +208,7 @@ SW2 配置 vlan4 为 mux-vlan -> SW2 上无法配置 Vlanif4（前提以及华�
                            -> 使用 VLAN 聚合来实现 Vlanif 的网关配置以及 VLAN2/VLAN3 对其的共享
 ```
 
-#### 3.2 实验验证
+#### 3.2 实验 验证
 
 <div align="center">
     <img src="VLAN_static/37.png" width="650"/>
@@ -361,3 +361,78 @@ Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface
 PC5 访问 PC1 的过程为：PC5（**`192.168.20.10/24`**）要访问 PC1（**`192.168.10.11/24`**）时先判断目的地址不在本地网段，于是把报文交给默认网关 **`192.168.20.1`**（SW1 的 Vlanif5）。若 PC5 本地没有网关的 MAC 缓存，就会在 VLAN5 内广播 ARP 请求解析 **`192.168.20.1`** 的 MAC，SW2 在 VLAN5 内泛洪并通过上联 Trunk（携带 VLAN5 tag）转发给 SW1，SW1 用 Vlanif5 回 ARP，PC5 学到网关 MAC 后把真正的业务报文发出，IP 目的仍是 **`192.168.10.11`**，但二层目的 MAC 是网关 MAC，帧从 PC5 的 access VLAN5 口进入 SW2，再由 SW2 在 Trunk 上打 VLAN5 tag 送到 SW1。
 
 SW1 收到后进行三层转发，查路由表发现 **`192.168.10.0/24`** 为直连网段（走 Vlanif4），如果 SW1 还不知道 PC1 的 MAC，就在对应的 Sub VLAN（VLAN2/VLAN3）里发 ARP 解析 **`192.168.10.11`**，PC1 回复后 SW1 得到 MAC 并把报文以 VLAN2 发回 SW2（Trunk 上带 VLAN2 tag），最后 SW2 在 VLAN2 内查表转发到 PC1 的 access 口，去掉 VLAN tag 后 PC1 收到并处理该报文。
+
+## 三、VLAN 聚合
+
+### 1.介绍
+
+在局域网网络中，为控制广播域和增强网络的安全性，广泛使用了 VLAN 技术。一般来说，不同 VLAN 之间的二层通信会被拒绝，**<font color="red">为实现三层通信，每个 VLAN 都需要有自己的 IP 子网和网关，随着网络中 VLAN 数量的增加，会导致大量的 IP 地址浪费</font>**。
+
+<div align="center">
+    <img src="VLAN_static/39.png" width="600"/>
+</div>
+
+因为对于每个子网来说，**<font color="red">子网号、子网定向广播地址、子网缺省网关地址都不能用作 VLAN 内的主机 IP 地址</font>**，且子网中实际接入的主机可能少于编址数，多出来的 IP 地址也会因不能再被其他 VLAN 使用而被浪费掉。为了解决上述问题，VLAN 聚合应运而生。下面显示了某企业为各部门制定的 VLAN 及 IP 地址分配表。
+
+上表显示了各 VLAN 的地址规划情况。VLAN 2 预计未来要有 10 个主机，给其分配一个掩码长为 28 的子网——**`172.16.1.0/28`**。该网段的子网号 **`172.16.1.0`** 和子网定向广播地址 **`172.16.1.15`** 以及子网缺省网关地址 **`172.16.1.1`** 都不能作为主机地址，剩下的 13 个地址可以被主机使用。这样，尽管 VLAN 2 只需要 10 个地址就可以满足需求了，但是按照子网划分却分配给它的 13 个地址。
+
+### 2.实现原理
+
+VLAN 聚合定义了两层 VLAN，**`Super-VLAN`** 和 **`Sub-VLAN`**。**<font color="red">每个 `Sub-VLAN` 对应一个广播域，`Super-VLAN` 是 `Sub-VLAN` 的上级 VLAN，一个 `Super-VLAN` 可以和多个 `Sub-VLAN` 进行关联，而且只需要给 `Super-VLAN` 分配一个 IP 子网，所有 `Sub-VLAN` 共享 `Super-VLAN` 的 IP 子网和缺省网关（也就是 `Super-VLAN` 的 VLANIF 接口）进行三层通信</font>**。这样，由于多个 Sub-VLAN 共享一个网关地址，减少了子网号、子网定向广播地址、子网缺省网关地址的消耗，并且在给 Sub-VLAN 分配 IP 地址时，是基于整个 Super-VLAN（相当于一个大 VLAN）的主机需求来规划的，不会造成 Sub-VLAN 的地址浪费。这样既保证了每一个 Sub-VLAN 作为一个独立的广播域实现广播隔离，又节省了 IP 地址资源，提高了编址的灵活性。
+
+**（1）Super-VLAN**
+
+Super-VLAN 作为上层 VLAN，为底下各个 Sub-VLAN 创建三层接口（VLANIF），从而保障各个 Sub-VLAN 之间以及与外网的三层通信。**<font color="red">但是 Super-VLAN 不属于任何物理接口</font>**，**<font color="red">而判定 Super-VLAN 的 VLANIF 接口状态是否为 Up，不是依赖于物理接口的状态判定，而是依赖于它所包含的 Sub-VLAN 中是否存在 Up 的物理接口，存在就 Up</font>**。
+
+**（2）Sub-VLAN**
+
+Sub-VLAN 是最终为主机提供接入功能的 VLAN（也就是说它可以包含物理接口），**但是 Sub-VLAN 不能创建三层接口（VLANIF），只是用来对用户二层隔离（或者叫隔离广播域）**。Sub-VLAN 不能占用一个独立的 IP 网段。在同一个 Super-VLAN 中，无论主机属于哪个 Sub-VLAN，它的 IP 地址都在 Super-VLAN 对应的子网网段内。
+
+Super-VLAN 和 Sub-VLAN 之间的关系，如下图所示。VLAN10 作为一个 Super-VLAN，底下包含了 3 个 Sub-VLAN，3 台主机属于不同的 Sub-VLAN，实现了二层隔离，但是它们都采用了同一个子网中的地址（VLAN10 的子网），并且共享 VLAN10 的 VLANIF 接口 IP 地址作为网关。
+
+<div align="center">
+    <img src="VLAN_static/40.png" width="350"/>
+</div>
+
+下面就几种 Sub-VLAN 的通信情况进行详细介绍。
+
+### 3.各 Sub-VLAN 间三层通信
+
+VLAN 聚合在实现不同 VLAN 共享同一子网网段地址的同时，也给 Sub-VLAN 间的三层转发带来了问题。普通 VLAN 中，不同 VLAN 内的主机可以通过各自不同的网关进行三层互通。**但是 Super-VLAN 中，所有 Sub-VLAN 内的主机使用的是同一个网段的地址，共用同一个网关地址，主机只会做二层转发，而不会送网关进行三层转发**。而实际上，不同 Sub-VLAN 的主机在二层是相互隔离的，这就造成了 Sub-VLAN 间无法通信的问题。解决这一问题的方法就是使用 VLAN 间 Proxy ARP。
+
+如下图所示，假设 Sub-VLAN2 内的主机 PC1 与 Sub-VLAN3 内的主机 PC2 要通信，在 Super-VLAN10 的 VLANIF 接口上启用 Proxy ARP。
+
+<div align="center">
+    <img src="VLAN_static/41.png" width="450"/>
+</div>
+
+上图中 PC1 和 PC2 之间的通信过程如下所示：
+
+- PC1 将 PC2 的 IP 地址（**`10.1.1.12`**）和自己所在网段 **`10.1.1.0/24`** 进行比较，发现 PC2 和自己在同一个子网，所以不会去找默认网关，而是直接查询 ARP 表来获取 PC2 的 IP 对应的二层 MAC 地址。但是 PC1 的 ARP 表中无 PC2 的对应表项。
+- PC1 发送 ARP 广播报文，请求 PC2 的 MAC 地址，目的 IP 为 **`10.1.1.12`**。
+- 网关 SW1 收到 PC1 的 ARP 请求，由于网关上使能 Sub-VLAN 间的 Proxy ARP，开始使用报文中的目的 IP 地址在路由表中查找，发现匹配了一个路由，下一跳为直连网段（VLANIF10 的 **`10.1.1.0/24`**）。VLANIF10 对应 Super-VLAN10，则向 Super-VLAN10 的所有 Sub-VLAN 接口发送一个 ARP 广播，请求 PC2 的 MAC 地址。
+- PC2 收到网关 SW1 发送的 ARP 广播后，对此请求进行 ARP 应答。
+- 当网关 SW1 收到 PC2 的应答之后，就把自己的 MAC 地址当作 PC2 的 MAC 地址回应给 PC1。
+- 当 PC1 再次发送报文给 PC2 时，首先把报文发送给网关 SW1，由网关 SW1 做转发。
+
+### 4.Sub-VLAN 与其他网络的三层通信
+
+如下图所示，用户主机与服务器处于不同的网段中，SW1 上配置了 Sub-VLAN2、Sub-VLAN3、Super-VLAN4 和普通的 VLAN10，SW2 上配置了普通的 VLAN10 和 VLAN20。
+
+<div align="center">
+    <img src="VLAN_static/42.png" width="250"/>
+</div>
+
+假设 Sub-VLAN2 下的主机 PC1 想访问与 SW2 相连的 Server，报文转发流程如下（假设 SW1 上已配置了去往 **`10.1.2.0/24`** 网段的路由，SW2 上已配置了去往 **`10.1.1.0/24`** 网段的路由，但两交换机没有任何三层转发表项）。
+
+- PC1 将 Server 的 IP 地址（**`10.1.2.2`**）和自己所在网段 **`10.1.1.0/24`** 进行比较，发现和自己不在同一个子网，发送 ARP 请求给自己的网关 SW1，请求网关的 MAC 地址，目的 MAC 为全 F，目的 IP 为 **`10.1.1.1`**。
+- SW1 收到该请求报文后，查找 Sub-VLAN 和 Super-VLAN 的对应关系，**<font color="red">知道应该回应 Super-VLAN4 对应的 VLANIF4 的 MAC 地址，并知道从 Sub-VLAN2 的接口回应给 PC1</font>**。
+- PC1 学习到网关 SW1 的 MAC 地址后，开始发送目的 MAC 为 Super-VLAN4 对应的 VLANIF4 的 MAC 地址，目的 IP 为 **`10.1.2.2`** 的报文。
+- SW1 收到该报文后，根据 Sub-VLAN 和 Super-VLAN 的对应关系以及目的 MAC 判断进行三层转发，查三层转发表项没有找到匹配项，上送 CPU 查找路由表，得到下一跳地址为 **`10.1.10.2`**，出接口为 VLANIF10，并通过 ARP 表项和 MAC 表项确定出接口，把报文发送给 SW2。
+- SW2 根据正常的三层转发流程把报文发送给 Server。
+
+Server 收到 PC1 的报文后给 PC1 回应，回应报文的目的 IP 为 **`10.1.1.2`**，目的 MAC 为 SW2 上 VLANIF20 接口的 MAC 地址，回应报文的转发流程如下。
+
+- Server 给 PC1 的回应报文按照正常的三层转发流程到达 SW1。到达 SW1 时，报文的目的 MAC 地址为 SW1 上 VLANIF10 接口的 MAC 地址。
+- SW1 收到该报文后根据目的 MAC 地址判断进行三层转发，查三层转发表项没有找到匹配项，上送 CPU 查路由表，发现目的 IP 为 **`10.1.1.2`** 对应的出接口为 VLANIF4，查找 Sub-VLAN 和 Super-VLAN 的对应关系，并通过 ARP 表项和 MAC 表项，知道报文应该从 Sub-VLAN2 的接口发送给 PC1。
+- 回应报文到达 PC1。
