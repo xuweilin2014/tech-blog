@@ -75,6 +75,12 @@ void br_configuration_update(struct net_bridge *br)
 }
 
 /* called under bridge lock */
+static void br_reply(struct net_bridge_port *p)
+{
+    br_transmit_config(p);
+}
+
+/* called under bridge lock */
 void br_received_config_bpdu(struct net_bridge_port *p, const struct br_config_bpdu *bpdu)
 {
     struct net_bridge *br;
@@ -106,12 +112,14 @@ void br_received_config_bpdu(struct net_bridge_port *p, const struct br_config_b
         }
 
         // 如果这条 BPDU 从本桥的 root_port 收到，要向下游扩散
+        // 构造一帧 802.1D 的 Configuration BPDU 并通过本桥的指定端口发送扩散出去
         if (p->port_no == br->root_port) {
             br_record_config_timeout_values(br, bpdu);
             br_config_bpdu_generation(br);
             if (bpdu->topology_change_ack)
                 br_topology_change_acknowledged(br);
         }
+    // 如果端口 p 接收到的 BPDU 更差，则将本端口更优的 BPDU 从端口 P 扩散发送出去
     } else if (br_is_designated_port(p)) {
         br_reply(p);
     }
@@ -324,3 +332,74 @@ void br_transmit_config(struct net_bridge_port *p)
     }
 }
 ```
+
+STP 接收 Config BPDU 的主流程如下所示：
+
+<div style="display:flex; justify-content:center;">
+  <div style="zoom:0.9;">
+      <div style="text-align:center; color:#d00; font-weight:750; margin:0 0 8px 0;">STP 接收 Config BPDU 主流程</div>
+    <pre class="mermaid">
+%%{init: {'flowchart': {'useMaxWidth': false, 'nodeSpacing': 15, 'rankSpacing': 30, 'useMaxHeight': false}, 'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+A[端口 p 收到 config BPDU] --> B{调用 br_supersedes_port_info 函数判断接收到的 BPDU 报文是否比端口 p 缓存的 BPDU 报文更优}
+B -- 是 --> C[br_record_config_information 保存更优的 BPDU 信息到端口 p 中并刷新计时器]
+C --> D[调用 br_configuration_update 函数]
+D --> D1[br_root_selection 选 root port 并更新本桥根桥和  root_path_cost]
+D --> D2[br_designated_port_selection 遍历本桥的所有端口判断并选 designated port]
+D2 --> E[br_port_state_selection 更新端口状态，将根端口 RP 以及指定端口 DR 设置为转发状态，其他的端口设置为阻塞状态]
+E -->  G{该 BPDU 是否从 root_port 收到}
+G -- 是 --> H[br_record_config_timeout_values 同步定时参数]
+H --> I[调用 br_config_bpdu_generation 函数]
+I --> J[对本桥所有 designated port 调用 br_transmit_config 发送扩散 BPDU]
+J --> K[结束]
+G -- 否 --> K
+B -- 否 --> L{端口 p 是否为指定端口}
+
+L -- 是 --> M[调用 br_reply 函数从本端口 p 发送本桥更优 BPDU 报文]
+M --> N[调用 br_transmit_config 函数构造并从端口 p 发送 BPDU 报文]
+L -- 否 --> K
+    </pre>
+  </div>
+</div>
+
+在收到 BPDU 报文之后，在本桥中选出新的根端口的流程图如下：
+
+<div style="display:flex; justify-content:center;">
+    <div style="zoom:0.9;">
+        <div style="text-align:center; color:#d00; font-weight:750; margin:0 0 8px 0;">本桥中选出新的根端口的流程</div>
+            <pre class="mermaid">
+%%{init: {'flowchart': {'useMaxWidth': false, 'nodeSpacing': 15, 'rankSpacing': 30, 'useMaxHeight': false}, 'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+S[开始 br_root_selection] --> I[root_port 设为 0]
+I --> L[遍历本桥的所有端口 port_list]
+L --> C[调用 br_should_become_root_port 比较候选端口 p 和 root_port 端口，从而判断候选端口 p 是否可以为根端口]
+C --> G[比较候选端口 p 和 root_port 指向的根桥 ID、经由本端口到根桥的路径代价、上行设备的桥 ID 等]
+G --> U[遍历结束]
+U --> E0[root_port 更新为最终比较胜出的端口 p 的值]
+E0 --> SET[本桥的根端口设置为 root_port]
+SET --> Z{root_port 是否为 0}
+Z -- 是 --> R0[1.说明本桥视自己为根桥;<br/>2.设置本桥的根桥字段设为本桥的 bridge_id;<br/>3.设置本桥到根桥的路径代价大小为 0]
+R0 --> END[结束]
+Z -- 否 --> GP[1.更新本桥的根桥 ID 为胜出根端口 p 的根桥字段;<br/>2.计算本桥到根桥的路径大小 = 端口 p 到根桥的路径 + 本端口到对端一跳的代价;]
+GP --> END
+        </pre>
+    </div>
+</div>
+
+在收到 BPDU 报文之后，在本桥中遍历所有端口，设置指定端口的流程图如下所示：
+
+<div style="display:flex; justify-content:center;">
+    <div style="zoom:1;">
+        <div style="text-align:center; color:#d00; font-weight:750; margin:0 0 8px 0;">本桥中选出新的根端口的流程</div>
+            <pre class="mermaid">
+%%{init: {'flowchart': {'useMaxWidth': false, 'nodeSpacing': 20, 'rankSpacing': 30}, 'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+S[开始执行 br_designated_port_selection 函数设置指定端口] --> L[遍历本桥的所有端口 port_list]
+L --> C[如果遍历候选端口 p 没有被禁用，调用 br_should_become_designated_port 判断端口 p 是否应该成为 DP]
+C --> G[1.比较根桥 ID 是否一致<br/>2.比较本桥到根桥的路径代价和端口 p 所连接网段上当前被判定为最优 BPDU 中所携带的到根桥的路径代价<br/>3.再比较桥 ID<br/>4.最后比较端口 ID]
+G --> R{是否应该成为 DP}
+R -- 是 --> U[调用 br_become_designated_port 将端口 p 设为指定端口并写入本桥的 designated_* 字段信息到端口 p 中]
+U --> L
+            </pre>
+    </div>
+</div>
