@@ -331,6 +331,124 @@ void br_transmit_config(struct net_bridge_port *p)
             mod_timer(&p->hold_timer, round_jiffies(jiffies + BR_HOLD_TIME));
     }
 }
+
+/**
+  * 处理端口 p 收到的 TCN BPDU 报文，802.1D 里，TCN BPDU 由检测到拓扑变化的非根桥沿着生成树向根桥方向逐跳上报，
+  * 通常由非根桥的 root port 发送出去（朝根桥方向），经过每一级桥的指定端口 DR 接收、确认（返回 TCA 报文），并继续向根桥上报
+  */
+void br_received_tcn_bpdu(struct net_bridge_port *p)
+{
+    p->stp_xstats.rx_tcn++;
+
+    // 仅当该端口是 DR 时，才处理接收到的 TCN 报文
+    if (br_is_designated_port(p)) {
+        br_info(p->br, "port %u(%s) received tcn bpdu\n", (unsigned int) p->port_no, p->dev->name);
+        // 1.如果本桥就是根桥，设置本桥的 TC 标志位（topology_change）为 1
+        // 2.如果本桥是非根桥，通过本桥的 root port 发送 TCN，向根桥上报
+        br_topology_change_detection(p->br);
+        // 将端口 p 的 topology_change_ack 标志位设置为 1，然后立刻发送 Config BPDU，用来携带 TCA 标志位，并且将 topology_change_ack 标志位清零
+        br_topology_change_acknowledge(p);
+    }
+}
+
+void br_topology_change_detection(struct net_bridge *br)
+{
+    int isroot = br_is_root_bridge(br);
+
+    if (br->stp_enabled != BR_KERNEL_STP)
+        return;
+    br_info(br, "topology change detected, %s\n", isroot ? "propagating" : "sending tcn bpdu");
+
+    // 如果本桥市根桥的话
+    if (isroot) {
+        // 将本桥的 TC 标志位设置为 1，也就是 br->topology_change 设置为 1，后续发出的 config BPDU 中的 TC 位设置为 1，用于通知全网刷新转发表
+        // 1.本桥调用 __br_set_topology_change 立刻会缩短转发表的老化时间，并且根桥周期性在 hello timer 到期之后，调用 br_config_bpdu_generation，
+        // 然后调用 br_transmit_config，构造 TC 位置为 1 的 config BPDU 报文从所有指定端口扩散发送出去 
+        // 2.其它桥接收到 TC 位置为 1 的 config BPDU 报文后，在 br_received_config_bpdu 函数中，调用 br_record_config_timeout_values 将本桥的
+        // TC 标志位设置为 1，并且继续构造 TC 位置为 1 的 config BPDU 报文从所有指定端口扩散发送出去
+        __br_set_topology_change(br, 1);
+        mod_timer(&br->topology_change_timer, jiffies + br->bridge_forward_delay + br->bridge_max_age);
+    // 如果本桥不是根桥的话    
+    } else if (!br->topology_change_detected) {
+        // 通过本桥的 root port 向根桥继续发送 TCN 报文
+        br_transmit_tcn(br);
+        mod_timer(&br->tcn_timer, jiffies + br->bridge_hello_time);
+    }
+
+    br->topology_change_detected = 1;
+}
+
+// 设置 br->topology_change 标志位（TC 状态），并在状态变化时调整 MAC 地址老化时间 ageing_time
+void __br_set_topology_change(struct net_bridge *br, unsigned char val)
+{
+    unsigned long t;
+    int err;
+
+    if (br->stp_enabled == BR_KERNEL_STP && br->topology_change != val) {
+        /* On topology change, set the bridge ageing time to twice the
+         * forward delay. Otherwise, restore its default ageing time.
+         */
+        if (val) {
+            t = 2 * br->forward_delay;
+            br_debug(br, "decreasing ageing time to %lu\n", t);
+        } else {
+            t = br->bridge_ageing_time;
+            br_debug(br, "restoring ageing time to %lu\n", t);
+        }
+
+        err = __set_ageing_time(br->dev, t);
+        if (err)
+            br_warn(br, "error offloading ageing time\n");
+        else
+            br->ageing_time = t;
+    }
+
+    br->topology_change = val;
+}
+
+static void br_record_config_timeout_values(struct net_bridge *br, const struct br_config_bpdu *bpdu)
+{
+    br->max_age = bpdu->max_age;
+    br->hello_time = bpdu->hello_time;
+    br->forward_delay = bpdu->forward_delay;
+    // 设置 br->topology_change 标志位（TC 状态），并在状态变化时调整 MAC 地址老化时间 ageing_time
+    __br_set_topology_change(br, bpdu->topology_change);
+}
+
+// 非根桥向根桥方向上报拓扑变化从 root port 发送 TCN BPDU
+void br_transmit_tcn(struct net_bridge *br)
+{
+    struct net_bridge_port *p;
+    p = br_get_port(br, br->root_port);
+    if (p)
+        br_send_tcn_bpdu(p);
+    else
+        br_notice(br, "root port %u not found for topology notice\n", br->root_port);
+}
+
+void br_send_tcn_bpdu(struct net_bridge_port *p)
+{
+    unsigned char buf[4];
+
+    if (p->br->stp_enabled != BR_KERNEL_STP)
+        return;
+
+    buf[0] = 0;
+    buf[1] = 0;
+    buf[2] = 0;
+    buf[3] = BPDU_TYPE_TCN;
+    br_send_bpdu(p, buf, 4);
+
+    p->stp_xstats.tx_tcn++;
+}
+
+static void br_topology_change_acknowledge(struct net_bridge_port *p)
+{
+    // 将本端口的 TCA 标志位（topology_change_ack）设置为 1
+	p->topology_change_ack = 1;
+    // 构造 bpdu 报文时把 bpdu.topology_change_ack 设置为 1，并且把此 config BPDU 报文从端口 p 发送出去，并且将 topology_change_ack 清零，只应答一次
+	br_transmit_config(p);
+}
 ```
 
 STP 接收 Config BPDU 的主流程如下所示：
@@ -403,3 +521,9 @@ U --> L
             </pre>
     </div>
 </div>
+
+非根桥收到 TCN BPDU 时，入口是 **`br_received_tcn_bpdu()`**，它收到 TCN 报文之后会做两件事：一是调用 **`br_topology_change_detection(br)`**，从本桥的 root_port 发送一个 TCN 报文，并且调用 **`br_topology_change_acknowledge(p)`** 函数在收到 TCN 报文的这个端口上回一个带 TCA 位的配置 BPDU，让下行设备停止重复上报和重传。所以 TCN 从变化点位逐跳向根桥方向传递，每一跳都在指定端口 DR 上给下行设备回 TCA 报文，同时沿 root port 继续往上报。
+
+根桥收到 TCN BPDU 时，入口是 **`br_received_tcn_bpdu()`**，同样会调用 **`br_topology_change_acknowledge(p)`** 函数在该端口回 TCA 给下行确认。但区别在 **`br_topology_change_detection()`** 函数中，根桥不需要再向上行设备发送 TCN 报文，因为根桥就是上报链的终点，所以根桥分支会直接调用 **`__br_set_topology_change`** 函数把本桥的 **`topology_change`** 状态置 1，同时还会把转发表的 MAC 老化时间临时缩短（典型是 **`2×forward_delay`**），其目的就是让全网更快把可能指向旧拓扑的 MAC 表项淘汰掉，从而加速拓扑变化后的流量收敛。
+
+根桥把 TC 扩散到整个网络的主要过程：根桥一旦设置 **`br->topology_change=1`**，接下来每次 hello 定时器触发 Config BPDU 生成/发送时，调用 **`br_config_bpdu_generation()`** 函数，在构造 BPDU 时都会把 **`bpdu.topology_change`** 置为 1，也就是 TC=1，然后调用 **`br_transmit_config`** 函数从根桥的所有指定端口发出 config BPDU 报文。下游交换机在 **`br_received_config_bpdu`** 函数中自己的 **`root_port`** 收到这种带 TC=1 的配置 BPDU 后，会在 **`br_record_config_timeout_values()`** 里将 TC=1 的配置同步到本桥，同样临时缩短自己的 MAC 老化时间，并且调用 **`br_config_bpdu_generation()`** 函数把带 TC=1 的 Config BPDU 从自己的指定端口再向下游扩散，于是 TC 标志就沿生成树逐跳传播到全网。
