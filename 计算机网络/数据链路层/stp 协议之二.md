@@ -521,9 +521,3 @@ U --> L
             </pre>
     </div>
 </div>
-
-非根桥收到 TCN BPDU 时，入口是 **`br_received_tcn_bpdu()`**，它收到 TCN 报文之后会做两件事：一是调用 **`br_topology_change_detection(br)`**，从本桥的 root_port 发送一个 TCN 报文，并且调用 **`br_topology_change_acknowledge(p)`** 函数在收到 TCN 报文的这个端口上回一个带 TCA 位的配置 BPDU，让下行设备停止重复上报和重传。所以 TCN 从变化点位逐跳向根桥方向传递，每一跳都在指定端口 DR 上给下行设备回 TCA 报文，同时沿 root port 继续往上报。
-
-根桥收到 TCN BPDU 时，入口是 **`br_received_tcn_bpdu()`**，同样会调用 **`br_topology_change_acknowledge(p)`** 函数在该端口回 TCA 给下行确认。但区别在 **`br_topology_change_detection()`** 函数中，根桥不需要再向上行设备发送 TCN 报文，因为根桥就是上报链的终点，所以根桥分支会直接调用 **`__br_set_topology_change`** 函数把本桥的 **`topology_change`** 状态置 1，同时还会把转发表的 MAC 老化时间临时缩短（典型是 **`2×forward_delay`**），其目的就是让全网更快把可能指向旧拓扑的 MAC 表项淘汰掉，从而加速拓扑变化后的流量收敛。
-
-根桥把 TC 扩散到整个网络的主要过程：根桥一旦设置 **`br->topology_change=1`**，接下来每次 hello 定时器触发 Config BPDU 生成/发送时，调用 **`br_config_bpdu_generation()`** 函数，在构造 BPDU 时都会把 **`bpdu.topology_change`** 置为 1，也就是 TC=1，然后调用 **`br_transmit_config`** 函数从根桥的所有指定端口发出 config BPDU 报文。下游交换机在 **`br_received_config_bpdu`** 函数中自己的 **`root_port`** 收到这种带 TC=1 的配置 BPDU 后，会在 **`br_record_config_timeout_values()`** 里将 TC=1 的配置同步到本桥，同样临时缩短自己的 MAC 老化时间，并且调用 **`br_config_bpdu_generation()`** 函数把带 TC=1 的 Config BPDU 从自己的指定端口再向下游扩散，于是 TC 标志就沿生成树逐跳传播到全网。
