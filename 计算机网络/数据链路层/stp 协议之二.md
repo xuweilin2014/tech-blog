@@ -1,5 +1,9 @@
 # STP 协议
 
+## 六、STR 协议的主要源代码实现分析
+
+### 1.源代码
+
 ```c{.line-numbers}
 /* called under bridge lock */
 static inline int br_is_root_bridge(const struct net_bridge *br)
@@ -449,7 +453,47 @@ static void br_topology_change_acknowledge(struct net_bridge_port *p)
     // 构造 bpdu 报文时把 bpdu.topology_change_ack 设置为 1，并且把此 config BPDU 报文从端口 p 发送出去，并且将 topology_change_ack 清零，只应答一次
 	br_transmit_config(p);
 }
+
+static void br_forward_delay_timer_expired(struct timer_list *t)
+{
+    struct net_bridge_port *p = timer_container_of(p, t, forward_delay_timer);
+    struct net_bridge *br = p->br;
+
+    br_debug(br, "port %u(%s) forward delay timer\n", (unsigned int) p->port_no, p->dev->name);
+    spin_lock(&br->lock);
+    // 如果端口状态为 LISTENING，则 forward-delay 到期后需要切换到 LEARNING 状态
+    if (p->state == BR_STATE_LISTENING) {
+        br_set_state(p, BR_STATE_LEARNING);
+        mod_timer(&p->forward_delay_timer, jiffies + br->forward_delay);
+    // 如果端口状态为 LEARNING，则 forward-delay 到期后需要切换到 FORWARDING 状态
+    } else if (p->state == BR_STATE_LEARNING) {
+        br_set_state(p, BR_STATE_FORWARDING);
+        // 如果本桥中至少存在一个指定端口，则触发拓扑变更检测
+        if (br_is_designated_for_some_port(br))
+            br_topology_change_detection(br);
+        netif_carrier_on(br->dev);
+    }
+    rcu_read_lock();
+    br_ifinfo_notify(RTM_NEWLINK, NULL, p);
+    rcu_read_unlock();
+    spin_unlock(&br->lock);
+}
+
+static int br_is_designated_for_some_port(const struct net_bridge *br)
+{
+    struct net_bridge_port *p;
+
+    list_for_each_entry(p, &br->port_list, list) {
+        // 检查端口是否未被禁用，且本桥在至少一个网段上是 designated bridge，因此也就拥有至少一个 designated port
+        if (p->state != BR_STATE_DISABLED && !memcmp(&p->designated_bridge, &br->bridge_id, 8))
+            return 1;
+    }
+
+    return 0;
+}
 ```
+
+### 2.STP 接收 Config BPDU 主流程图
 
 STP 接收 Config BPDU 的主流程如下所示：
 
@@ -480,6 +524,8 @@ L -- 否 --> K
   </div>
 </div>
 
+### 3.本桥中选出新的根端口和指定端口的流程图
+
 在收到 BPDU 报文之后，在本桥中选出新的根端口的流程图如下：
 
 <div style="display:flex; justify-content:center;">
@@ -503,6 +549,8 @@ GP --> END
         </pre>
     </div>
 </div>
+
+### 4.本桥中选出新的指定端口的流程图
 
 在收到 BPDU 报文之后，在本桥中遍历所有端口，设置指定端口的流程图如下所示：
 

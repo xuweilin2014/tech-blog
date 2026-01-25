@@ -29,13 +29,23 @@ X 帧的一个拷贝会永不停止地逆时针快速旋转，另外一个拷贝
 
 交换网络中环路的存在，会导致 MAC 地址表翻摆、广播风暴、多帧复制等现象，**但环路能提高网络连接的可靠性**。在上图交换机网络中，因为有环路的存在，即使某两台交换机之间的链路因故障而中断了，整个网络仍然会保持其连通性，而这在无环网络中是无法做到的。
 
+#### 1.4 华为交换机生成模式
+
+按一台交换机上可以定义的生成树实例和 VLAN 的对应关系，可以把交换机生成树模式分成单生成树实例模型、多生成树实例模型和基于 VLAN 生成树实例模型。
+
+- **<font color="red">单实例模型 SST（Single STP）</font>**，交换机上所有 VLAN 只能使用相同的一个拓扑，华为交换机单实例模型只有 STP 和 RSTP 两种模式；
+- **<font color="red">多实例模型 MST（Multiple STP）</font>**，自定义拓扑实例的数量，并可手工关联哪些 VLAN 使用哪个实例。MSTP 是华为交换机默认的生成树模式；
+- **<font color="red">基于 VLAN 实例模型 VBST（Vlan-based STP）</font>**，无法定义实例的数量，因为每个 VLAN 都拥有各自的生成树实例，实例/拓扑之间彼此独立不相关。这种生成树模式只在特定交换机平台支持，多用于和 Cisco PVST+ 互操作使用，不建议使用，系统开销较大。
+
+一台交换机只能工作在一种模式下，华为交换机使用命令 **`stp mode {stp | rstp | mstp}`** 在交换机上定义生成树模式。建议网络中所有交换机使用同种模式，MSTP 是默认的建议模式。IEEE802.1d 和 802.1w 是目前使用的两种生成树的算法，主要区别是计算无环的树所花的时间不同。STP 使用 802.1d 算法，而 RSTP 和 MSTP 使用 802.1w 算法。**<font color="red">实例的概念实际上源自 MSTP 术语，代表每一棵树型拓扑，在交换网络中可同时定义多个树形拓扑，即存在多个实例</font>**，可定义不同实例负责分担不同的业务数据流量，并走不同的转发路径。
+
 ### 2.STP 协议的概念
 
 因此，IEEE 802.1D-1998 中定义了 STP (Spanning Tree Protocol) 协议。在描述 STP 协议之前，我们还需要了解几个基本术语：桥（Bridge）、桥的 MAC 地址、桥 ID（BID）、端口 ID（PID）。
 
 #### 2.1 桥
 
-因为性能方面的限制等因素，**<font color="red">早期的交换机一般只有两个转发端口（如果端口多了，交换的转发速度就会慢得无法接受），所以那时的交换机常常被称为 "网桥"，或简称 "桥"</font>**。在 IEEE 的术语中，"桥"这个术语一直沿用至今，但并不只是指只有两个转发端口的交换机了，而是泛指具有任意多端口的交换机。
+因为性能方面的限制等因素，早期的交换机一般只有两个转发端口（如果端口多了，交换的转发速度就会慢得无法接受），所以那时的交换机常常被称为 "网桥"，或简称 "桥"。在 IEEE 的术语中，"桥"这个术语一直沿用至今，但并不只是指只有两个转发端口的交换机了，而是泛指具有任意多端口的交换机。
 
 #### 2.2 桥的 MAC 地址
 
@@ -49,13 +59,15 @@ X 帧的一个拷贝会永不停止地逆时针快速旋转，另外一个拷贝
     <img src="STP_static/2.png" width="380"/>
 </div>
 
-#### 2.4 端口 ID（Portal Identifier, PID）
+#### 2.4 端口 ID
 
 下图是两种常用的端口 ID 的定义方法。端口优先级的值是可以人为设定的。不同的设备商所采用的 PID 定义方法可能不同。在下图的第一种定义中，端口 ID 由两个字节组成，第一个字节是该端口的端口优先级，后一个字节是该端口的端口编号。在第二种定义中，端口 ID 由 16 个比特组成，前 4 个比特是该端口的端口优先级，后 12 比特是该端口的端口编号。
 
 <div align="center">
     <img src="STP_static/3.png" width="320"/>
 </div>
+
+通过执行 **`stp port priority`** 可以改变当前端口的端口优先级，从而影响端口的 PID，最终影响该端口是否会被选举成为指定端口。端口优先级的改变时，生成树协议会重新计算端口的角色并进行状态迁移。端口优先级可以影响端口在指定生成树实例和进程中的角色。用户可以在不同生成树实例或进程中对同一端口配置不同的优先级，从而使不同的用户流量沿不同的物理链路转发，完成流量的负载分担。
 
 ## 二、STP 树的生成
 
@@ -118,6 +130,13 @@ flowchart TD
     <img src="STP_static/7.png" width="500"/>
 </div>
 
+总结如下：
+
+- 非根交换机有且只有一个 RP 端口，根交换机没有 RP 端口；
+- RP 端口所在网段的上游对应端口一定是 DP 端口；
+- 一台交换机在确定所有端口角色时，一定要先确定出 RP 端口角色（或在已有 RP 的前提下），再确定其他角色端口；
+- 交换机的根端口确定出来后，其最终的状态是转发状态。如果是 STP 模式，端口迁移到转发状态需要等待 2 个 Forward-Delay。
+
 ### 3.确定指定端口
 
 根端口保证了 **<font color="red">交换机与根桥之间工作路径的唯一性和最优性。为了防止工作环路的存在，网络中每个网段与根桥之间的工作路径也必须是唯一的且最优的</font>**。当一个网段有两条及两条以上的路径通往根桥时（该网段连接了不同的交换机，或者该网段连接了同台交换机的不同端口），**与该网段相连的交换机（可能不止一台）就必须确定出一个唯一的指定端口**。指定端口的确定也需要进行比较判优，具体的流程如下所示：
@@ -145,6 +164,11 @@ flowchart TD
     <img src="STP_static//9.png" width="450"/>
 </div>
 
+总结如下：
+
+- 每个网段上只有一个指定端口，指定端口负责向下游转发来自根桥的数据帧；
+- DP 端口的最终状态是转发状态，但对于进入转发状态所需时间，如果是 STP 模式交换机，则需等待 2 个 forward-delay；
+
 ### 4.阻塞备用端口
 
 **在确定了根端口和指定端口之后，交换机上所有剩余的非根端口和非指定端口统称为备用端口**。STP 会对这些备用端口进行逻辑阻塞。所谓逻辑阻塞，**是指这些备用端口不能转发由终端计算机产生并发送的帧，这些帧也被称为用户数据帧**。不过，备用端口可以接收并处理 BPDU 报文，但是不能发送 BPDU 报文。根端口和指定端口既可以发送和接收 BPDU 报文，又可以转发用户数据帧。
@@ -169,6 +193,14 @@ Configuration BPDU 中携带的参数可以分为 3 类：
 2. BPDU 用于进行 STP 计算的参数，包括发送该 BPDU 的交换机的 BID，当前根桥的 BID，发送该 BPDU 的端口的 PID，以及发送该 BPDU 的端口的 RPC。
 3. 第三类是时间参数，分别是 Hello Time、Forward Delay、Message Age、Max Age。
 
+只有当发送者的 BID 或端口的 PID 两个字段中至少有一个和本桥接收端口不同，BPDU 报文才会被处理，否则丢弃，这样可避免处理和本端口信息一致的 BPDU 报文。UNH-IOL（新罕布什尔大学互操作实验室）的 STP Operations Test Suite 在测试 Loopback 回来的 BPDU 不应被处理时，直接这样写（并标注引用条款为 IEEE 802.1t-2001: sub-clause 9.3.3，它是对 802.1D 的修订/勘误集）：When a Port receives a Configuration BPDU that contains the Bridge ID and Port ID of the receiving Port, the Configuration BPDU is dropped.
+
+配置 BPDU 在以下 3 种情况下会产生：
+
+- 只要端口使能 STP，配置 BPDU 就会按照 Hello Time 定时器规定的时间间隔从指定端口发出；
+- 当根端口收到配置 BPDU 时，根端口所在的设备会向自己的每一个指定端口复制一份配置 BPDU；
+- 当指定端口收到比自己差的配置 BPDU 时，立刻触发向下游设备发送自己的 BPDU。（此机制可加速一个网段有次优设备接入时，加速其计算端口角色的过程）；
+
 ### 2.TCN BPDU
 
 如果网络中某条链路发生了故障，导致工作拓扑发生了改变，则位于故障点的交换机可以通过端口状态直接感知到这种变化，但是其他的交换机是无法直接感知到这种变化的。这时，**位于故障点的交换机会以 Hello Time 为周期通过其根端口不断向上游交换机发送 `TCN BPDU`，直到接收到从上游交换机发来的、TCA 标志置 1 的 Configuration BPDU**。上游交换机在收到 TCN BPDU 后，一方面会通过其指定端口回复 TCA 标志置 1 的 Configuration BPDU，另一方面会以 Hello Time 为周期通过其根端口不断向它的上游交换机发送 TCN BPDU。此过程一直重复，直到根桥接收到 TCN BPDU。**<font color="red">根桥接收到 TCN BPDU 后，会发送 `TC 标志置 1 的 Configuration BPDU`，通告所有交换机网络拓扑发生了变化，需要尽快老化自己的 MAC 地址表项，以便适应新的网络拓扑</font>**。
@@ -178,6 +210,55 @@ Configuration BPDU 中携带的参数可以分为 3 类：
 </div>
 
 TCN BPDU 的格式非常简单，只有协议 ID、协议版本 ID 以及 BPDU 类型三个字段，并且 BPDU 类型字段的值为 0x80。TCN BPDU 用于在网络拓扑发生变化时向根桥通知变化的发生。当拓扑稳定时，网络中只会出现配置 BPDU，而当拓扑发生变更时，STP 会使用 TCN BPDU，以及两种特殊的配置 BPDU
+
+TCN BPDU 在如下两种情况下会产生：
+
+- 端口状态变为 Forwarding 状态，且该设备上至少有一个指定端口；
+- 指定端口收到 TCN BPDU，复制 TCN BPDU 并发往根桥。
+
+对于第 1 种情况，**<font color="red">端口状态变为 Forwarding 状态，且该设备上至少有一个指定端口</font>**，在 802.1D 的收敛过程中，一个端口转变为 forwarding 状态，代表本端口之前不转发数据帧，到现在开始转发用户流量（包括学习来的 MAC/转发未知单播等）。从网络视角，这通常表示某条链路/某个路径刚刚真正可用了，会改变二层流量的实际走向。如果一台桥一个指定端口都没有，通常意味着它在当前拓扑里非常边缘，要么它所有端口不是 designated（可能是 root port 或被阻塞）。要么它没有任何下游网段需要它来提供到根的出口，这时即使它某个端口进入 Forwarding 转发状态，也很可能不会对其他网段造成 MAC 路径变化（影响被限制在它自己/非常局部）。
+
+在 Linux bridge 的 kernel STP 实现里，第 1 种情况执行路径为：首先，入口函数为 **`br_stp_timer.c`** 里的 **`br_forward_delay_timer_expired()`**，当某个端口的状态为 LEARNING 并且 forward-delay 到期时，端口的状态会切换到 FORWARDING，内核会先把端口状态设置为 **`BR_STATE_FORWARDING`**，然后判断本桥上是否至少存在一个指定端口。只有满足这个条件，才会进一步调用 **`br_topology_change_detection(br)`** 去执行拓扑变化处理流程。
+
+```c{.line-numbers}
+static void br_forward_delay_timer_expired(struct timer_list *t)
+{
+    struct net_bridge_port *p = timer_container_of(p, t, forward_delay_timer);
+    struct net_bridge *br = p->br;
+
+    br_debug(br, "port %u(%s) forward delay timer\n", (unsigned int) p->port_no, p->dev->name);
+    spin_lock(&br->lock);
+    // 如果端口状态为 LISTENING，则 forward-delay 到期后需要切换到 LEARNING 状态
+    if (p->state == BR_STATE_LISTENING) {
+        br_set_state(p, BR_STATE_LEARNING);
+        mod_timer(&p->forward_delay_timer, jiffies + br->forward_delay);
+    // 如果端口状态为 LEARNING，则 forward-delay 到期后需要切换到 FORWARDING 状态
+    } else if (p->state == BR_STATE_LEARNING) {
+        br_set_state(p, BR_STATE_FORWARDING);
+        // 如果本桥中至少存在一个指定端口，则触发拓扑变更检测
+        if (br_is_designated_for_some_port(br))
+            br_topology_change_detection(br);
+        netif_carrier_on(br->dev);
+    }
+    rcu_read_lock();
+    br_ifinfo_notify(RTM_NEWLINK, NULL, p);
+    rcu_read_unlock();
+    spin_unlock(&br->lock);
+}
+
+static int br_is_designated_for_some_port(const struct net_bridge *br)
+{
+    struct net_bridge_port *p;
+
+    list_for_each_entry(p, &br->port_list, list) {
+        // 检查端口是否未被禁用，且本桥在至少一个网段上是 designated bridge，因此也就拥有至少一个 designated port
+        if (p->state != BR_STATE_DISABLED && !memcmp(&p->designated_bridge, &br->bridge_id, 8))
+            return 1;
+    }
+
+    return 0;
+}
+```
 
 #### 2.1 标志字段中 TCA 比特位被设置为 1 的配置 BPDU
 
@@ -213,8 +294,6 @@ STP 按照如下顺序选择最优的配置 BPDU。
 - 最小的接口 ID；
 
 在这四条原则中（每条原则都对应配置 BPDU 中的相应字段），**<font color="red">第一条原则主要用于在网络中选举根桥，后面的原则主要用于选举根接口及指定接口</font>**。假设有两个 BPDU，第一个 BPDU 中根桥 ID、RPC、网桥 ID 以及接口 ID 字段的内容分别是：**`32768 0025-9ef8-0e70、20000、32768 0025-0201-0132、128 15`**，另一个 BPDU 是：**`32768 0025-9ef8-0e70、20000、32768 0025-0201-a298、128 19`**，首先这两个配置 BPDU 的根桥 ID 字段都相同，其次 RPC 字段也相同，而前者的网桥 ID 字段值小于后者（网桥 MAC 地址更小），因此前者更优。
-
-### 1.BPDU 的交互与拓扑计算
 
 初始情况下，交换网络中的所有交换机都认为自己是根桥，这些设备开始运行后从自己所有激活了 STP 的接口发送 BPDU。如下图所示，SW1 及 SW2 均在自己的接口上发送自己的 BPDU，图中只为大家展示了 BPDU 中最重要的四个字段。
 
@@ -255,17 +334,17 @@ STP 按照如下顺序选择最优的配置 BPDU。
     <img src="STP_static/16.png" width="600"/>
 </div>
 
-### 4.STP 端口状态
+## 五、STP 端口状态
 
 STP 交换机的端口分为以下 5 种状态：
 
-1. 去能（Disabled）：去能状态的端口无法接收和发出任何帧，端口处于关闭（Down）状态；
-2. 阻塞（Blocking）：阻塞状态的端口只能接收 STP 协议帧，不能发送 STP 协议帧，也不能转发用户数据帧；
-3. 侦听（Listening）：侦听状态的端口可以接收并发送 STP 协议帧，但不能进行 MAC 地址学习，也不能转发用户数据帧；
-4. 学习（Learning）：学习状态的端口可以接收并发送 STP 协议帧，也可以进行 MAC 地址学习，但不能转发用户数据帧；
-5. 转发（Forwarding）：转发状态的端口可以接收并发送 STP 协议帧，也可以进行 MAC 地址学习，同时能够转发用户数据帧；
+1. **`禁用（Disabled）`**：该接口不能收发 BPDU，也不能收发业务数据帧，例如接口为 down；
+2. **`阻塞（Blocking）`**：该接口被 STP 阻塞。处于阻塞状态的接口不能发送 BPDU，但是会持续侦听 BPDU，而且不能收发业务数据帧，也不会进行 MAC 地址学习；
+3. **`侦听（Listening）`**：当接口处于该状态时，表明 STP 初步认定该接口为根接口或指定接口，但接口依然处于 STP 计算的过程中，此时接口可以收发 BPDU，但是不能收发业务数据帧，也不会进行 MAC 地址学习；
+4. **`学习（Learning）`**：当接口处于该状态时，会侦听业务数据帧（但是不能转发业务数据帧），并且在收到业务数据帧后进行 MAC 地址学习；
+5. **`转发（Forwarding）`**：处于该状态的接口可以正常地收发业务数据帧，也会进行 BPDU 处理。接口的角色需是根接口或指定接口才能进入转发状态；
 
-STP 交换机的端口在初始启动时，首先会从 Disabled 状态进入到 Blocking 状态。在 Blocking 状态，端口只能接收和分析 BPDU，但不能发送 BPDU。**如果端口被选为根端口或指定端口，则会进入 `Listening` 状态**，此时端口接收并发送 BPDU，这种状态会持续一个 Forward Delay 的时间长度，缺省为15s。然后，该端口会进入到 Learning 状态，并在此状态持续一个 Forward Delay 的时间长度。**处于 Learning 状态的端口可以接收和发送 BPDU，同时开始构建 MAC 地址映射表，为转发用户数据帧做好准备**。处于 Learning 状态的端口仍然不能开始转发用户数据帧，因为此时网络中可能还存在因 STP 树的计算过程不同步而产生的临时环路。最后，端口由 Learning 状态进入 Forwarding 状态（即前面 3.1 节所述，为了防止 STP 树计算收敛之前产生的临时环路，**待 2 倍的 Forward Delay 超时后，才能进入用户数据帧转发状态**），开始用户数据帧的转发工作。
+STP 交换机的端口在初始启动时，首先会从 Disabled 状态进入到 Blocking 状态。在 Blocking 状态，端口只能接收和分析 BPDU，但不能发送 BPDU。**如果端口被选为根端口或指定端口，则会进入 `Listening` 状态**，此时端口接收并发送 BPDU，这种状态会持续一个 Forward Delay 的时间长度，缺省为15s。然后，该端口会进入到 Learning 状态，并在此状态持续一个 Forward Delay 的时间长度。**处于 Learning 状态的端口可以接收和发送 BPDU，同时开始构建 MAC 地址映射表，为转发用户数据帧做好准备**。处于 Learning 状态的端口仍然不能开始转发用户数据帧，因为此时网络中可能还存在因 STP 树的计算过程不同步而产生的临时环路。最后，端口由 Learning 状态进入 Forwarding 状态（即前面所述，为了防止 STP 树计算收敛之前产生的临时环路，**待 2 倍的 Forward Delay 超时后，才能进入用户数据帧转发状态**），开始用户数据帧的转发工作。
 
 端口转换的状态图如下所示：
 
