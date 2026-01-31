@@ -103,7 +103,7 @@ void rstpPrtDesignatedPortFsm(RstpBridgePort *port) {
                 }
                 // 1.上层要求同步（比如调用了 rstpSetSyncTree() 函数将本桥的所有端口设置为 sync=1），并且当前端口还没处于 synced 状态，即未同步完成
                 // 2.端口为非边缘口
-                // 3.端口正要学习或转发数据帧，必须拉回 discarding 状态以阻断潜在环路
+                // 3.端口正要学习或转发数据帧，必须拉回 discarding 状态以阻断潜在环路，如果本来就在 Discarding，一般 learn/forward 已经是 FALSE，再切状态没意义
                 // 只要出现必须先确保拓扑安全的事件（sync 未完成），并且该端口不是 edge 口（edge 口不存在形成环路的可能），而且端口正要学习或转发，那么必须先进入丢弃（Discarding）以阻断潜在环路。
                 else if (((port->sync && !port->synced) || (port->reRoot && port->rrWhile != 0) || port->disputed) && !port->operEdge &&
                          (port->learn || port->forward)) {
@@ -394,6 +394,116 @@ void rstpPrtRootPortChangeState(RstpBridgePort *port, RstpPrtState newState) {
     }
 
     // 通知全局调度器：本轮发生了状态变化，需要继续迭代推进其它状态机
+    port->context->busy = TRUE;
+}
+
+void rstpPrtAlternatePortFsm(RstpBridgePort *port) {
+    // 端口角色转换（PRT）状态机：持续评估当前状态的所有转移条件，满足任一条件即发生状态迁移
+    switch (port->prtState) {
+    case RSTP_PRT_STATE_ALTERNATE_PROPOSED:
+    case RSTP_PRT_STATE_ALTERNATE_AGREED:
+    case RSTP_PRT_STATE_BACKUP_PORT:
+        rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_ALTERNATE_PORT);
+        break;
+
+    // 处于 BLOCK_PORT（阻塞端口）状态时
+    case RSTP_PRT_STATE_BLOCK_PORT:
+        if (port->selected && !port->updtInfo) {
+            // 只有当端口既不学习（learning=0）也不转发（forwarding=0）时，才认为确实处于丢弃/阻塞语义，进而开始设置 Alternate/Backup 端口的状态机
+            if (!port->learning && !port->forwarding) {
+                // 切到 ALTERNATE_PORT（替代端口稳定态）
+                rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_ALTERNATE_PORT);
+            }
+        }
+
+        break;
+
+    // 处于 ALTERNATE_PORT（替代端口稳定态）时，按握手/同步/计时器等条件决定是否进入其它子状态
+    case RSTP_PRT_STATE_ALTERNATE_PORT:
+        if (port->selected && !port->updtInfo) {
+            // Proposal/Agreement 握手：对端提出 proposal，而本端还未 agree，则进入 ALTERNATE_PROPOSED 状态，触发全树 sync
+            if (port->proposed && !port->agree) {
+                rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_ALTERNATE_PROPOSED);
+            // 已满足同步条件但尚未 agree，或者既 proposed 又 agree——进入已同意子状态
+            } else if ((rstpAllSynced(port->context) && !port->agree) || (port->proposed && port->agree)) {
+                rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_ALTERNATE_AGREED);
+            // 备份端口判定，当端口角色为 BACKUP 且 Recent Backup 计时器不等于 2*HelloTime，这里用 rbWhile != 2*HelloTime 作为触发条件之一
+            } else if (port->rbWhile != (2 * rstpHelloTime(port)) && port->role == STP_PORT_ROLE_BACKUP) {
+                rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_BACKUP_PORT);
+            // 同步/重选根相关的触发：fdWhile、sync、reRoot、synced 等变化时，重新进入 ALTERNATE_PORT
+            // 注意：这里虽然还是切到同一状态，但会执行该状态的 entry 动作（用于重置变量/计时器等）
+            } else if (port->fdWhile != rstpForwardDelay(port) || port->sync || port->reRoot || !port->synced) {
+                rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_ALTERNATE_PORT);
+            } else {
+                //Just for sanity
+            }
+        }
+
+        break;
+
+    default:
+        rstpFsmError(port->context);
+        break;
+    }
+}
+
+void rstpPrtAlternatePortChangeState(RstpBridgePort *port, RstpPrtState newState) {
+    // 切换到新的 PRT（Port Role Transition）状态：用于 Alternate/Backup 端口角色的状态入口处理
+    port->prtState = newState;
+
+    switch (port->prtState) {
+    // ALTERNATE_PROPOSED：对端发送 Proposal，本端口进入提议已收到/待同步阶段
+    case RSTP_PRT_STATE_ALTERNATE_PROPOSED:
+        // Proposal 处理：
+        // 1) 对整棵树置 sync=TRUE，要求全桥端口进入同步流程（同步树）
+        // 2) 清除本端口 proposed 标志，避免重复处理同一提议
+        rstpSetSyncTree(port->context);
+        port->proposed = FALSE;
+        break;
+
+    //ALTERNATE_AGREED state?
+    case RSTP_PRT_STATE_ALTERNATE_AGREED:
+        // Agreement 处理：
+        // 1) 清除 proposed
+        // 2) 置 agree=TRUE，表示该端口达成 Agreement
+        // 3) 置 newInfo=TRUE，提示发送状态机需要发送 BPDU（例如携带 Agreement 信息）
+        port->proposed = FALSE;
+        port->agree = TRUE;
+        port->newInfo = TRUE;
+        break;
+
+    // BLOCK_PORT：进入阻塞相关状态（确保端口不学习/不转发）
+    case RSTP_PRT_STATE_BLOCK_PORT:
+        // 1) 用计算得到的 selectedRole 更新当前 role
+        // 2) 清除 learn/forward 请求，防止 PST 状态机把端口推进到 Learning/Forwarding
+        port->role = port->selectedRole;
+        port->learn = FALSE;
+        port->forward = FALSE;
+        break;
+
+    //BACKUP_PORT state?
+    case RSTP_PRT_STATE_BACKUP_PORT:
+        port->rbWhile = 2 * rstpHelloTime(port);
+        break;
+
+    // ALTERNATE_PORT：标准 Alternate 端口状态
+    case RSTP_PRT_STATE_ALTERNATE_PORT:
+        // 勘误处理：按 802.1Q-2018 13.37 的建议，在进入 Alternate 时重装 fdWhile
+        port->fdWhile = rstpForwardDelay(port);
+        // 进入 Alternate 后，认为端口处于已同步状态，并清理同步/重根控制变量
+        port->synced = TRUE;
+        port->rrWhile = 0;
+        port->sync = FALSE;
+        port->reRoot = FALSE;
+        break;
+
+    //Invalid state?
+    default:
+        //Just for sanity
+        break;
+    }
+
+    //The RSTP state machine is busy
     port->context->busy = TRUE;
 }
 ```
@@ -845,6 +955,30 @@ void rstpRecordAgreement(RstpBridgePort *port) {
         port->agreed = FALSE;
     }
 }
+
+void rstpSetSyncTree(RstpBridgeContext *context) {
+    uint_t i;
+
+    // 作用：把整桥所有端口的 sync 变量置为 TRUE，用于触发同步（sync）流程。
+    // - 当 Root/Alternate 端口处于 Proposal/Agreement 握手流程时，需要先让相关端口进入同步状态，以避免在拓扑快速切换时形成临时二层环路。
+    // - 各端口的状态机会根据 sync 标志，去做相应的阻塞/等待/状态收敛动作，当同步完成后，再由状态机清除 sync 或设置 synced 等标志。
+    /* 遍历桥上的所有端口，将 sync 置位 */
+    for (i = 0; i < context->numPorts; i++) {
+        context->ports[i].sync = TRUE;
+    }
+}
+
+
+void rstpSetReRootTree(RstpBridgeContext *context) {
+    uint_t i;
+
+    // 作用：把整桥所有端口的 reRoot 变量置为 TRUE，用于触发重新定根（re-root）流程。
+    // 当 Root 端口进入 REROOT 状态时，会调用该过程，把 reRoot 置位扩散到所有端口。
+    /* 遍历桥上的所有端口，将 reRoot 置位 */
+    for (i = 0; i < context->numPorts; i++) {
+        context->ports[i].reRoot = TRUE;
+    }
+}
 ```
 
 ## 五、rstp_pst.c
@@ -995,6 +1129,97 @@ void rstpPrsFsm(RstpBridgeContext *context)
 }
 ```
 
+## 七、rstp_pti.c
+
+```c{.line-numbers}
+// rstp_pti.c
+void rstpPtiFsm(RstpBridgePort *port) {
+    // PTI（Port Timers state machine）：负责每秒一次的节拍处理
+    // 状态机持续评估当前状态的迁移条件，满足条件就切换状态
+    switch (port->ptiState) {
+        // ONE_SECOND：等待 1 秒 tick 信号（tick 通常由外部 1s 定时器置位）
+        case RSTP_PTI_STATE_ONE_SECOND:
+            // 每来一次 tick，就进入 TICK 状态做每秒钟应做的事
+            if (port->tick) {
+                rstpPtiChangeState(port, RSTP_PTI_STATE_TICK);
+            }
+            break;
+        // TICK：完成一次每秒处理后，立刻回到 ONE_SECOND
+        case RSTP_PTI_STATE_TICK:
+            // 无条件回到 ONE_SECOND：用于清掉 tick，并等待下一次 tick
+            rstpPtiChangeState(port, RSTP_PTI_STATE_ONE_SECOND);
+            break;
+        default:
+            // 非法状态：触发统一的状态机错误处理
+            rstpFsmError(port->context);
+            break;
+    }
+}
+
+void rstpPtiChangeState(RstpBridgePort *port, RstpPtiState newState) {
+    // 切换到新状态
+    port->ptiState = newState;
+
+    // 进入某状态时，该状态的入口动作只执行一次
+    switch (port->ptiState) {
+        case RSTP_PTI_STATE_ONE_SECOND:
+            // ONE_SECOND 入口动作：清除 tick，表示已消费本轮 1s 节拍
+            port->tick = FALSE;
+            break;
+
+        case RSTP_PTI_STATE_TICK:
+            // TICK 入口动作：将所有非 0 的计时器减 1（单位：秒）
+            // 这些计时器对应 RSTP 中的各类 per-port timer
+            rstpDecrementTimer(&port->helloWhen);       // Hello timer：控制 BPDU 周期发送节奏
+            rstpDecrementTimer(&port->tcWhile);         // Topology Change timer：TC 传播/持续时间窗口
+            rstpDecrementTimer(&port->fdWhile);         // Forward Delay timer：与状态迁移/延迟相关
+            rstpDecrementTimer(&port->rcvdInfoWhile);   // Received Info timer：接收信息有效期/超时相关
+            rstpDecrementTimer(&port->rrWhile);         // Recent Root timer：近期根相关计时
+            rstpDecrementTimer(&port->rbWhile);         // Recent Backup timer：近期备份相关计时
+            rstpDecrementTimer(&port->mdelayWhile);     // Migration Delay timer：STP/RSTP 迁移期计时
+            rstpDecrementTimer(&port->edgeDelayWhile);  // Edge Delay timer：边缘端口延时相关计时
+            // txCount：每发送一个 BPDU 会递增；这里每秒递减，用于发包保持计数/限速窗口随时间衰减
+            rstpDecrementTimer(&port->txCount);
+            break;
+
+        default:
+            // 非法状态：不做处理（保持健壮性）
+            break;
+    }
+
+    // 标记上下文 busy：表示本轮有状态机执行了入口动作/发生了状态变化，驱动调度器继续迭代直至收敛
+    port->context->busy = TRUE;
+}
+```
+
+## 八、rstp_conditions.c
+
+```c{.line-numbers}
+/**
+ * 在 CycloneSTP Open 中，rrWhile 是 Recent Root timer
+ * - 当端口成为 Root Port 时，PRT 状态机会把 rrWhile 重新装载为 ForwardDelay
+ * - 当端口进入 DESIGNATED_SYNCED 等同步完成/退休相关状态时，会把 rrWhile 清零
+ *
+ * 因此 rrWhile != 0 表示该端口仍处于最近 Root 端口的窗口期（重选根/同步流程尚未完全收敛）。本条件用于判断 reRoot 流程是否已经在整桥范围完成：只要除了本端口之外还有任意端口 rrWhile != 0，就认为尚未 reRooted；只有当所有其它端口 rrWhile 都为 0 时，才返回 TRUE。
+ */
+bool_t rstpReRooted(RstpBridgePort *port) {
+    uint_t i;
+    RstpBridgeContext *context;
+    // 获取桥上下文（包含端口数组与端口数量）
+    context = port->context;
+    // 遍历桥上的所有端口，检查其它端口是否仍处于 Recent Root 窗口期
+    // 注意：需要跳过本端口自身；本端口的 rrWhile 在流程中允许为非 0
+    for (i = 0; i < context->numPorts; i++) {
+        if (&context->ports[i] != port && context->ports[i].rrWhile != 0) {
+            // 发现至少一个其它端口仍未完成 reRoot（Recent Root 计时器仍在运行）
+            return FALSE;
+        }
+    }
+    // 除本端口外，所有端口 rrWhile 均为 0，认为整桥 reRoot 流程已完成
+    return TRUE;
+}
+```
+
 ## 解析
 
 ### 1.初始化 
@@ -1011,8 +1236,22 @@ RSTP 协议初始化入口是 **`rstpFsmInit()`**，它做完端口基础字段�
 
 ### 2.reRoot 机制
 
+如果一个端口此时并非处于转发状态（FORWARDING），当它转换到根端口状态时，它将调用 **`setReRootTree()`** 过程，为本桥的所有端口（Bridge Ports）设置 reRoot，从而指示所有近期根端口（recent roots）切换到丢弃状态。**<font color="red">根端口（Root Port）会将 rrWhile 计时器维持在 FwdDelay 这一数值；一旦该端口不再是根端口，便允许 rrWhile 自然递减直至到期；并且如果该端口进入丢弃状态，rrWhile 将被置为 0</font>**。当所有近期根端口都已被退役/解除（即满足 reRooted）之后，**<font color="red">根端口即可转换到学习（Learning）状态，并进一步转换到转发（Forwarding）状态</font>**。基本上 reRoot 机制是为了确保在根端口切换时，新的根端口能够安全地进入转发状态，而不会因为旧根端口的存在而引发临时的二层环路，只会对旧根端口有影响。
+
+假设一个 AP 端口不是根端口，但是如果在 **`rstpFsm()`** 函数的状态机循环中，调用 **`rstpPrsFsm()`** 函数，重新对端口 P 进行角色选举，发现端口 P 现在变成了根端口，那么它在调用 **`rstpPrtFsm()`** 函数时，由于 **`if(port->role != port->selectedRole)`** 初次判断不通过，所以会调用 **`rstpPrtRootPortChangeState(port, RSTP_PRT_STATE_ROOT_PORT);`** 函数，将 **`port->role`** 设置为 **`STP_PORT_ROLE_ROOT`**，并刷新 rrWhile 计时器为 rstpFwdDelay。后续第二次调用 **`rstpPrtFsm()`** 函数时，由于此时 **`port->role`** 和 **`port->selectedRole`** 已经相等了，所以会进入 **`rstpPrtRootPortFsm()`** 函数的 **`RSTP_PRT_STATE_ROOT_PORT`** 状态分支，由于 **`else if(!port->forward && !port->reRoot)`** 判断通过，因为此时只是将 AP 端口设置为根端口，没有进行数据转发，也没有进入 reRoot 流程。
+
+>后续在 **`rstpPrtRootPortFsm()`** 状态机中，会判断 **`port->rrWhile != rstpFwdDelay(port)`**，如果根端口的 rrWhile 计时器不等于 rstpFwdDelay，则会刷新 rrWhile 计时器为 rstpFwdDelay。也就是前面所说的根端口会将 rrWhile 计时器维持在 FwdDelay 这一数值。AP 端口在初始化之后，rrWhile 始终为 0，reRoot 始终为 false。DP 端口在 P/A 协商过程中，rrWhile 也会被清 0（fsm 第二个 if 分支），reRoot 也会被清 false（fsm 第三个 if 分支）。因此只有初始根端口的 rrWhile 不为 0，本桥中初始为其它端口的 rrWhile 都为 0。
+
+后续调用 **`rstpSetReRootTree(port->context);`** 函数，把全桥所有端口 reRoot 置 True。后续此新根端口 RP 想要进入转发状态必须满足两个条件，要么 **`port->fdWhile == 0`** 为真，要么 **`rstpReRooted(port) && port->rbWhile == 0 && rstpVersion(port->context)`** 为真。第一个条件是让计时器的时间走完，第二个条件主要是 **`rstpReRooted(port)`** 为真，表示全桥所有其它端口的 rrWhile 都已经归零，表示所有近期根端口都已被退役/解除，根端口 RP 才能进入学习状态，进而进入转发状态。
+
+此时本桥之前根端口 RP 变为 AP 端口，其状态机函数 **`rstpPrtAlternatePortFsm()`** 会进入 **`RSTP_PRT_STATE_ALTERNATE_PORT`** 状态分支，由于 **`if(port->reRoot)`** 判断通过，所以会调用 **`rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_ALTERNATE_PORT);`** 函数，将端口的 learn 和 forward 都设置为 false，确保端口不会进入转发状态。同时 rrWhile 计时器会被清 0，reBoot 设置为 false，表示端口已经稳定，退出 reRoot 流程，并且 synced 设置为 True。
+
+本桥之前根端口 RP 变为 DP 端口，其状态机函数 **`rstpPrtDesignatedPortFsm()`** 会进入 **`RSTP_PRT_STATE_DESIGNATED_PORT`** 状态分支，由于 **`port->reRoot && port->rrWhile != 0`** 判断通过，所以会调用 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_DISCARD);`** 函数，将端口的 learn 和 forward 都设置为 false，之后此 DP 端口会开始进行 P/A 协商，从而快速进入转发状态，在这个过程中会将 rrWhile 清零。
+
+所以新的根端口 RP 会通过 **`rstpReRooted(port) && port->rbWhile == 0 && rstpVersion(port->context)`** 此判断条件，然后进入 **`LEARNING`** 状态，进而进入 **`FORWARDING`** 状态，实现快速收敛转发数据。
+
+### 3.P/A 机制
 
 
-### 3.RP 切换
 
 
