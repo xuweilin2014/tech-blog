@@ -17,3 +17,11 @@ Port Role Transitions 状态机为了让一个Designated Port（指定端口）�
 - **`agreed`**：当本端收到带 Agreement 位的 RST BPDU，且对端端口角色是 **`Root/Alternate/Backup`**，并且该 BPDU 的优先级不比本端更好（即不会因为更优 BPDU 导致角色又要重新选），就置位 agreed。
 
 任何一个指定端口一旦转换到 Discarding 状态，就会向其相邻网桥请求许可，以便随后能够转换到 Forwarding 状态。其结果是在当前活动拓扑中形成的一个切口（cut）（可以理解为转发路径被临时切断/阻塞的边界）会从根桥方向向网络外缘逐步传播，直到它在最终稳定的活动拓扑中到达其应处的位置，或一直传播到网络边缘为止。
+
+把端口切到 Discarding 不会带来数据环路风险；但切到 Forwarding 必须与该端口所处局部区域内其它端口的角色/状态保持一致——这个区域的边界由非 Forwarding 的端口，以及连接到没有其他桥的 LAN 的端口共同限定。当一个端口因为生成树信息变化而被分配为 Root 或 Designated 时，桥只有在满足以下条件之一时，才知道它可以进入 Forwarding：
+
+- 已经过去了足够长的时间，使得新信息能传播到该区域内所有桥，并且任何矛盾信息也来得及返回/被收到；
+- 该端口现在是 Root Port，并且本桥上任何曾经是 Root Port 的端口现在都不是、且在生成树信息传播到网络其它桥之前也不会成为 Forwarding 状态；
+- 该端口是 Designated Port，它所连接的 LAN 上至多还有一台其它桥；且那台桥的端口状态要么与生成树信息一致、要么处于 Discarding；并且通过它们的 Forwarding 端口再连接出去的更远端桥，也同样满足“一致或 Discarding”；
+- 该端口是 Edge Port；
+

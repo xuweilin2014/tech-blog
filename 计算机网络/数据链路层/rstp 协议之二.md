@@ -334,7 +334,6 @@ void rstpPrtRootPortFsm(RstpBridgePort *port) {
 
 void rstpPrtRootPortChangeState(RstpBridgePort *port, RstpPrtState newState) {
     // Root Port 角色的 PRT（Port Role Transition）状态机：切换状态并执行 entry action
-
     // 切换到新状态
     port->prtState = newState;
     // 进入新状态时执行一次 entry action
@@ -345,7 +344,6 @@ void rstpPrtRootPortChangeState(RstpBridgePort *port, RstpPrtState newState) {
         // 消费 proposed 事件
         port->proposed = FALSE;     
         break;
-
     case RSTP_PRT_STATE_ROOT_AGREED:
         // 准备发送 Agreement：
         // - 清 proposed（proposal 已处理）
@@ -357,42 +355,35 @@ void rstpPrtRootPortChangeState(RstpBridgePort *port, RstpPrtState newState) {
         port->agree = TRUE;
         port->newInfo = TRUE;
         break;
-
     case RSTP_PRT_STATE_REROOT:
         // 启动 reroot：对全桥端口置 reRoot 标志，触发重收敛流程
         rstpSetReRootTree(port->context);
         break;
-
     case RSTP_PRT_STATE_ROOT_FORWARD:
         // 请求 PST（Port State Transition 状态机）把端口推进到 Forwarding
         // fdWhile=0 表示不需要再等待 forwardDelay
         port->fdWhile = 0;
         port->forward = TRUE;
         break;
-
     case RSTP_PRT_STATE_ROOT_LEARN:
         // 请求 PST 把端口推进到 Learning
         // 装载 ForwardDelay 计时器，用于 Learning 阶段的延时控制
         port->fdWhile = rstpForwardDelay(port);
         port->learn = TRUE;
         break;
-
     case RSTP_PRT_STATE_REROOTED:
         // reroot 完成：清 reRoot 标志
         port->reRoot = FALSE;
         break;
-
     case RSTP_PRT_STATE_ROOT_PORT:
         // Root Port 稳态：更新端口角色，并刷新 rrWhile（Recent Root timer）
         port->role = STP_PORT_ROLE_ROOT;
         port->rrWhile = rstpFwdDelay(port);
         break;
-
     default:
         // 非法/未覆盖状态：保持“无动作”
         break;
     }
-
     // 通知全局调度器：本轮发生了状态变化，需要继续迭代推进其它状态机
     port->context->busy = TRUE;
 }
@@ -671,6 +662,13 @@ void rstpFsm(RstpBridgeContext *context)
 
 ```c{.line-numbers}
 // rtsp_ptx.c
+
+void rstpPtxInit(RstpBridgePort *port) {
+    // PTX（Port Transmit）状态机初始化：直接进入 TRANSMIT_INIT
+    // 该状态的入口动作会初始化发送相关变量（newInfo、txCount），随后在 PTX FSM 中无条件回到 IDLE
+    rstpPtxChangeState(port, RSTP_PTX_STATE_TRANSMIT_INIT);
+}
+
 // IEEE 802.1D-2004（含 RSTP 802.1w）里的 Port Transmit state machine（端口发送状态机），它决定什么时候在某个端口上发 BPDU，以及发哪一种 BPDU
 // 定时发送 + 事件触发发送（newInfo）+ 发送速率限制（txCount/TxHoldCount）+ 由 sendRSTP 决定 BPDU 类型
 void rstpPtxFsm(RstpBridgePort *port)
@@ -760,7 +758,6 @@ void rstpPtxChangeState(RstpBridgePort *port, RstpPtxState newState) {
             port->newInfo = TRUE;
             port->txCount = 0;
             break;
-
         case RSTP_PTX_STATE_TRANSMIT_PERIODIC:
             // 周期性发送触发：
             // 1.Designated 口：总是需要周期性维持 BPDU
@@ -777,7 +774,6 @@ void rstpPtxChangeState(RstpBridgePort *port, RstpPtxState newState) {
                 // 其它角色一般不在这里触发周期发送
             }
             break;
-
         case RSTP_PTX_STATE_TRANSMIT_CONFIG:
             // 发送传统 STP Configuration BPDU
             // 发送前清 newInfo，避免重复触发；发送后计数 +1；清 tcAck 防止确认语义粘连
@@ -786,14 +782,12 @@ void rstpPtxChangeState(RstpBridgePort *port, RstpPtxState newState) {
             port->txCount++;
             port->tcAck = FALSE;
             break;
-
         case RSTP_PTX_STATE_TRANSMIT_TCN:
             // 发送 TCN BPDU（Topology Change Notification）
             port->newInfo = FALSE;
             rstpTxTcn(port);
             port->txCount++;
             break;
-
         case RSTP_PTX_STATE_TRANSMIT_RSTP:
             // 发送 RSTP BPDU（携带 RSTP flags/role 等信息）
             // 同样：发送后计数 +1，并清 tcAck
@@ -802,12 +796,10 @@ void rstpPtxChangeState(RstpBridgePort *port, RstpPtxState newState) {
             port->txCount++;
             port->tcAck = FALSE;
             break;
-
         case RSTP_PTX_STATE_IDLE:
             // 回到空闲态：重装 Hello 计时器，等待 tick 递减到 0 再触发 periodic
             port->helloWhen = rstpHelloTime(port);
             break;
-
         default:
             // 非法状态：通常不应发生
             break;
@@ -926,7 +918,6 @@ void rstpRecordProposal(RstpBridgePort *port) {
 
     // bpdu 指向端口 p 接收到的 BPDU 报文
     bpdu = &port->context->bpdu;
-
     // Decode port role
     role = bpdu->flags & RSTP_BPDU_FLAG_PORT_ROLE;
 
@@ -1218,6 +1209,50 @@ bool_t rstpReRooted(RstpBridgePort *port) {
     // 除本端口外，所有端口 rrWhile 均为 0，认为整桥 reRoot 流程已完成
     return TRUE;
 }
+
+bool_t rstpAllSynced(RstpBridgeContext *context) {
+    uint_t i;
+    bool_t res;
+    RstpBridgePort *port;
+
+    // allSynced 条件（IEEE 802.1D-2004 17.20.3）：
+    // 对给定树（given tree）上的所有端口都必须满足：
+    //   1) selected == TRUE、role == selectedRole
+    //   2) updtInfo == FALSE
+    //   3) 并且满足二选一：
+    //      a) synced == TRUE
+    //      b) 该端口是 Root port（role == STP_PORT_ROLE_ROOT）
+    //
+    // 语义直观解释：
+    // - selected/role==selectedRole/!updtInfo 表示端口角色与信息已经稳定、可用于一致性判断；
+    // - 对非 Root 端口，必须已完成同步（synced==TRUE）；
+    // - Root 端口在 allSynced 判定中允许例外（即使 synced==FALSE 也不阻塞 allSynced），这样 Root Port 状态机才能以 allSynced 作为其他端口已同步完成的门槛。
+    // 注意：Cyclone 这里不会在 res 变为 FALSE 后提前 break，而是继续遍历所有端口，这不影响最终结果（仍返回 res），只是实现风格上选择不短路。
+
+    // 初始化结果为 TRUE：只要有任一端口不满足条件，后续就会把 res 置为 FALSE
+    res = TRUE;
+
+    for (i = 0; i < context->numPorts; i++) {
+        port = &context->ports[i];
+        // 条件 1：端口必须已被选中（参与本轮计算/收敛）
+        if (!port->selected) {
+            res = FALSE;
+        // 条件 2：端口当前 role 必须与计算得到的 selectedRole 一致（角色尚未稳定则不算 allSynced）
+        } else if (port->role != port->selectedRole) {
+            res = FALSE;
+        // 条件 3：updtInfo 必须为 FALSE（端口信息正在更新时，不能认为同步完成）
+        } else if (port->updtInfo) {
+            res = FALSE;
+        // 条件 4：对非 Root 端口，必须 synced==TRUE；Root 端口允许例外
+        } else if (!port->synced && port->role != STP_PORT_ROLE_ROOT) {
+            res = FALSE;
+        } else {
+            // 满足当前端口的 allSynced 判定条件
+        }
+    }
+    // 只有当所有端口都满足上述条件时，res 才会保持 TRUE
+    return res;
+}
 ```
 
 ## 解析
@@ -1246,12 +1281,28 @@ RSTP 协议初始化入口是 **`rstpFsmInit()`**，它做完端口基础字段�
 
 此时本桥之前根端口 RP 变为 AP 端口，其状态机函数 **`rstpPrtAlternatePortFsm()`** 会进入 **`RSTP_PRT_STATE_ALTERNATE_PORT`** 状态分支，由于 **`if(port->reRoot)`** 判断通过，所以会调用 **`rstpPrtAlternatePortChangeState(port, RSTP_PRT_STATE_ALTERNATE_PORT);`** 函数，将端口的 learn 和 forward 都设置为 false，确保端口不会进入转发状态。同时 rrWhile 计时器会被清 0，reBoot 设置为 false，表示端口已经稳定，退出 reRoot 流程，并且 synced 设置为 True。
 
-本桥之前根端口 RP 变为 DP 端口，其状态机函数 **`rstpPrtDesignatedPortFsm()`** 会进入 **`RSTP_PRT_STATE_DESIGNATED_PORT`** 状态分支，由于 **`port->reRoot && port->rrWhile != 0`** 判断通过，所以会调用 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_DISCARD);`** 函数，将端口的 learn 和 forward 都设置为 false，之后此 DP 端口会开始进行 P/A 协商，从而快速进入转发状态，在这个过程中会将 rrWhile 清零。
+本桥之前根端口 RP 变为 DP 端口，其状态机函数 **`rstpPrtDesignatedPortFsm()`** 会进入 **`RSTP_PRT_STATE_DESIGNATED_PORT`** 状态分支，由于 **`port->reRoot && port->rrWhile != 0`** 判断通过，所以会调用 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_DISCARD);`** 函数，将端口的 learn 和 forward 都设置为 false，之后此 DP 端口会开始进行 P/A 协商，DP 发送 Proposal，然后接收 Agreement，并且将 agreed 设置为 true。DP 之前的角色 RP 的 agreed/synced 一直为 false。因此在变为 DP 端口后会进入 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_SYNCED);`** 函数将 rrWhile 清零。
 
 所以新的根端口 RP 会通过 **`rstpReRooted(port) && port->rbWhile == 0 && rstpVersion(port->context)`** 此判断条件，然后进入 **`LEARNING`** 状态，进而进入 **`FORWARDING`** 状态，实现快速收敛转发数据。
 
-### 3.P/A 机制
+### 3.P/A 协商机制
 
+Port Role Transitions 状态机为了让一个 Designated Port（指定端口）从非转发快速进入 Forwarding，会用到 **`Proposal/Agreement`** 的消息交换。
 
+首先调用 **`rstpPrtFsm()`** 函数，如果端口目前的 **`port->role`** 是 Designated 和 **`port->selectedRole`** 相等，那么会进入 **`rstpPrtDesignatedPortFsm()`** 状态机函数的 **`RSTP_PRT_STATE_DESIGNATED_PORT`** 状态分支。由于此时端口 port 处于非转发状态，proposing 为 false，agreed 为 false，forward 为 false，所以会进入第 1 个 if 分支，调用 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_PROPOSE);`** 函数，将 proposing 置为 true，触发 P/A 协商流程。同时将 newInfo 置为 true，接下来由 PTX 看到 newInfo 条件为真，就去发送 Proposal RSTP BPDU 报文。
 
+最开始在状态机初始化函数 **`rstpFsmInit()`** 中，会调用 **`rstpPtxInit()`** 函数，进而调用 **`rstpPtxChangeState(port, RSTP_PTX_STATE_TRANSMIT_INIT);`** 函数，将 ptx 的状态设置为 **`RSTP_PTX_STATE_TRANSMIT_INIT`**。后面继续调用 **`rstpPtxFsm()`** 函数时，由于 ptx 状态是 **`RSTP_PTX_STATE_TRANSMIT_INIT`**，所以会调用 **`rstpPtxChangeState(port, RSTP_PTX_STATE_IDLE);`** 函数，继续将 ptxState 状态设置为 **`RSTP_PTX_STATE_IDLE`**。接下来再次调用 **`rstpPtxFsm()`** 函数时，由于 ptx 状态是 **`RSTP_PTX_STATE_IDLE`**，并且端口的 newInfo 为 true（之前在 PRT 状态机中设置的），所以会调用 **`rstpPtxChangeState(port, RSTP_PTX_STATE_TRANSMIT_RSTP);`** 函数，将 ptxState 状态设置为 **`RSTP_PTX_STATE_TRANSMIT_RSTP`**。接着调用 **`rstpPtxChangeState(port, RSTP_PTX_STATE_TRANSMIT_RSTP);`** 函数，将 newInfo 清零，表示这次的新消息已经发送完，然后调用 **`rstpTxRstp(port);`** 函数发送 RSTP BPDU 报文，并且如果 **`port->proposing`** 为 True，**`bpdu.flags |= RSTP_BPDU_FLAG_PROPOSAL;`**，将 Proposal 位设置为 1，表示这是一个 Proposal 报文，最后发送出去。
 
+当根端口收到这个 Proposal 报文后，会调用 **`rstpRecordProposal(port);`** 函数，只有当收到的 BPDU 端口角色=Designated，且 Proposal 位=1 时，才把本根端口的 **`port->proposed = TRUE`**。随后调用 **`rstpPrtFsm()`** 函数时，由于端口的 role 是 Root，selectedRole 也是 Root，所以会进入 **`rstpPrtRootPortFsm()`** 函数的 **`RSTP_PRT_STATE_ROOT_PORT`** 状态分支。由于 proposed 为 true，agree 为 false，所以会进入第 1 个 if 分支，调用 **`rstpPrtRootPortChangeState(port, RSTP_PRT_STATE_ROOT_PROPOSED);`** 函数，将 proposed 设置为 false，并且继续调用 **`rstpSetSyncTree(port->context)`** 函数，将本桥所有端口的 sync 变量设置为 true。即 Root Port 收到 Proposal 后，先要求本桥所有相关端口进入同步流程，确保不会瞬间形成环路。
+
+随后根端口想要进入 ROOT_AGREED 状态，需要 **`rstpAllSynced(context) && !port->agree`** 为真，或 **`proposed && agree`** 为真，前者表示所有端口都已经同步完成，后者表示本端口已经同意对端的 Proposal，后面又收到对端的 Proposal 报文。而 **`rstpAllSynced()`** 的判定非常关键，它主要要求 **`(port->synced == TRUE) || (port->role == ROOT)`**，也就是根端口发 Agreement 之前，必须等其他端口都把 synced 变成 TRUE（根端口自己 role==ROOT 例外）。
+
+此时本桥上其他 DP 端口如果已经处于同步/安全状态，比如已经处于 agreed 状态（处于可以安全快速转发的证明），已经处于 synced 状态（处于同步完成的证明，因为本桥上可能同时有 2 个正在 P/A 协商的端口），或者本端口是边缘端口（edge port），或者本端口本身既不处于学习状态，也不处于转发状态。如果 DP 端口处于上述状态时，就没有必要进入丢弃状态，直接执行 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_SYNCED);`** 函数，将 synced 置为 true，sync 设置为 false，rrWhile 设置为 0，表示本端口已经同步完成，可以安全转发数据。否则如果当 sync==1 且 synced==0，并且这个 DP 当前还在 learn 或 forward（而且不是 edge 口）时，就会将该端口进入 **`RSTP_PRT_STATE_DESIGNATED_DISCARD`** 状态，确保端口不会转发数据，等待同步完成。
+
+假设所有端口都已经同步完成，那么会调用 **`rstpPrtRootPortChangeState(port, RSTP_PRT_STATE_ROOT_AGREED);`** 函数，将根端口的 agree 置为 true，proposed 设置为 false，sync 设置为 false，触发 Agreement 流程。同时将 newInfo 置为 true，接下来由 PTX 看到 newInfo 条件为真，就去发送 Agreement RSTP BPDU 报文。
+
+>这里解释为什么要将 proposed 设置为 false，因为根端口在本桥同步完成（agree 已经设置为 true）后，如果又收到对端的 Proposal 报文，那么会再次进入 **`RSTP_PRT_STATE_ROOT_PROPOSED`** 状态，将 proposed 设置为 false，避免再次调用 **`rstpSetSyncTree`** 函数，将本桥的所有端口重新进入 sync 状态。
+
+DP 端口在收到对端发回的 Agreement 后，PIM 会在合适的分支里调用 **`rstpRecordAgreement()`** 函数，只有当运行在 RSTP 版本，且端口被判定为点到点链路，且收到的 BPDU Agreement 位=1 时，才把本 DP 端口的 **`port->agreed = TRUE`**，并清掉 **`port->proposing`**。随后调用 **`rstpPrtFsm()`** 函数时，由于端口的 role 是 Designated，selectedRole 也是 Designated，所以会进入 **`rstpPrtDesignatedPortFsm()`** 函数。接着由于 **`((port->fdWhile == 0 || port->agreed || port->operEdge) && (port->rrWhile == 0 || !port->reRoot) && !port->sync)`**，所以会快速进入 LEARNING 状态，进而进入 FORWARDING 状态，实现快速收敛转发数据。
+
+>注意，如果不是 RP 端口而是 AP 端口收到 proposal 报文，那么也会发送 Agreement 报文给对端，从而让对端 DP 端口快速进入转发状态。但是由于调用 **`rstpSetSyncTree`** 函数将 AP 端口本身的 sync 也设置为 true，因此 **`(port->fdWhile != rstpForwardDelay(port) || port->sync || port->reRoot || !port->synced)`** 判断通过，会进入 **`RSTP_PRT_STATE_ALTERNATE_PORT`** 状态分支，将 sync 设置为 false，synced 设置为 true，表示已经同步，并且 AP 端口的 learn 和 forward 一直设置为 false，确保此 AP 端口不会进入转发状态。
