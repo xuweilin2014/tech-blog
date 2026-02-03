@@ -816,6 +816,99 @@ void rstpPtxChangeState(RstpBridgePort *port, RstpPtxState newState) {
 
 ```c{.line-numbers}
 // rstp_procedures.c
+
+typedef enum {
+   RSTP_BPDU_TYPE_CONFIG = 0x00,
+   RSTP_BPDU_TYPE_TCN    = 0x80,
+   RSTP_BPDU_TYPE_RST    = 0x02,
+} RstpBpduTypes;
+
+RstpRcvdInfo rstpRcvInfo(RstpBridgePort *port) {
+    int_t res;
+    uint8_t role;
+    RstpRcvdInfo portInfo;
+    const RstpBpdu *bpdu;
+
+    bpdu = &port->context->bpdu;
+
+    // 在 rstp_bpdu.h 里，CycloneSTP 把 BPDU 类型定义为:
+    // RSTP_BPDU_TYPE_CONFIG = 0x00: 传统 STP 的 Configuration BPDU
+    // RSTP_BPDU_TYPE_TCN    = 0x80: 传统 STP 的 TCN
+    // RSTP_BPDU_TYPE_RST    = 0x02: RSTP 的 Rapid Spanning Tree BPDU，也就是 RST BPDU
+    if (bpdu->bpduType == RSTP_BPDU_TYPE_TCN) {
+        port->rcvdTcn = TRUE;
+    }
+
+    port->msgPriority.rootBridgeId.priority = ntohs(bpdu->rootId.priority);
+    port->msgPriority.rootBridgeId.addr = bpdu->rootId.addr;
+    port->msgPriority.rootPathCost = ntohl(bpdu->rootPathCost);
+    port->msgPriority.designatedBridgeId.priority = ntohs(bpdu->bridgeId.priority);
+    port->msgPriority.designatedBridgeId.addr = bpdu->bridgeId.addr;
+    port->msgPriority.designatedPortId = ntohs(bpdu->portId);
+
+    port->msgPriority.bridgePortId = port->portId;
+
+    port->msgTimes.messageAge = ntohs(bpdu->messageAge) / 256;
+    port->msgTimes.maxAge = ntohs(bpdu->maxAge) / 256;
+    port->msgTimes.forwardDelay = ntohs(bpdu->forwardDelay) / 256;
+    port->msgTimes.helloTime = ntohs(bpdu->helloTime) / 256;
+
+    // 如果 BPDU 类型是 RST BPDU，根据 RST BPDU 的报文格式，则端口角色由 Flags 中的 bit2-3 位指定
+    // 把 flags 里除 bit2~bit3 之外的其它标志位（TC、Proposal、Learning、Forwarding、Agreement、TCA 等）都清掉，只保留端口角色那两位
+    // UNKNOWN = 0x00、ALT_BACKUP = 0x04、ROOT = 0x08、DESIGNATED = 0x0C
+    if (bpdu->bpduType == RSTP_BPDU_TYPE_RST) {
+        role = bpdu->flags & RSTP_BPDU_FLAG_PORT_ROLE;
+    // CycloneSTP 这里做了一个兼容性处理，把收到的 Configuration BPDU 视为显式携带 Designated port role
+    } else if (bpdu->bpduType == RSTP_BPDU_TYPE_CONFIG) {
+        role = RSTP_BPDU_FLAG_PORT_ROLE_DESIGNATED;
+    } else {
+        role = RSTP_BPDU_FLAG_PORT_ROLE_UNKNOWN;
+    }
+
+    if (role == RSTP_BPDU_FLAG_PORT_ROLE_DESIGNATED) {
+        // 比较本端口收到的 BPDU 里解出来的消息优先级向量 msgPriority，以及该端口当前保存/持有的优先级向量 portPriority
+        // rstpComparePriority 返回大于 0 表示 msgPriority 更优先，小于 0 表示 portPriority 更优先，等于 0 表示两者相等
+        res = rstpComparePriority(&port->msgPriority, &port->portPriority);
+
+        // 消息向量 superior 的条件：要么消息向量更好；要么 Designated Bridge 的 Bridge Address 分量 + Designated Port 的 Port Number 分量相同
+        // 因此即使这次 BPDU 的完整优先级向量看起来更差，只要它仍来自同一个 designated bridge + 同一个 designated port（端口号一致），Cyclone 仍把它归为 Superior，从而刷新/重记收到的信息
+        if (res < 0) {
+            if (rstpCompareBridgeAddr(&port->msgPriority.designatedBridgeId.addr,
+                    &port->portPriority.designatedBridgeId.addr) == 0 &&
+                rstpComparePortNum(port->msgPriority.designatedPortId,
+                    port->portPriority.designatedPortId) == 0) {
+                res = 1;
+            }
+        }
+
+        if (res > 0) {
+            portInfo = RSTP_RCVD_INFO_SUPERIOR_DESIGNATED;
+        } else if (res == 0) {
+            // 当 msgPriority == portPriority 时，拓扑优先级没变，但 times 不同 表示协议时序参数更新了，需要采取 Superior 分支的动作来刷新本端口持有的 times 参数
+            if (rstpCompareTimes(&port->msgTimes, &port->portTimes) != 0) {
+                portInfo = RSTP_RCVD_INFO_SUPERIOR_DESIGNATED;
+            } else {
+                portInfo = RSTP_RCVD_INFO_REPEATED_DESIGNATED;
+            }
+        } else {
+            portInfo = RSTP_RCVD_INFO_INFERIOR_DESIGNATED;
+        }
+    // 在 RSTP 里，非 Designated 端口（Root/Alternate/Backup）也会发 RST BPDU，并且可能携带 Agreement 位，用于快速同步（proposal/agreement 机制）
+    // 因此标准/实现会把它归为一个特殊类别：InferiorRootAlternateInfo
+    } else if (role == RSTP_BPDU_FLAG_PORT_ROLE_ROOT || role == RSTP_BPDU_FLAG_PORT_ROLE_ALT_BACKUP) {
+        res = rstpComparePriority(&port->msgPriority, &port->portPriority);
+        if (res <= 0) {
+            portInfo = RSTP_RCVD_INFO_INFERIOR_ROOT_ALTERNATE;
+        } else {
+            portInfo = RSTP_RCVD_INFO_OTHER;
+        }
+    } else {
+        portInfo = RSTP_RCVD_INFO_OTHER;
+    }
+
+    return portInfo;
+}
+
 void rstpTxRstp(RstpBridgePort *port) {
 
     RstpBpdu bpdu;
@@ -968,6 +1061,210 @@ void rstpSetReRootTree(RstpBridgeContext *context) {
     /* 遍历桥上的所有端口，将 reRoot 置位 */
     for (i = 0; i < context->numPorts; i++) {
         context->ports[i].reRoot = TRUE;
+    }
+}
+
+typedef __packed_struct {
+    uint16_t priority; //0-1
+    MacAddr addr;      //2-7
+} StpBridgeId;
+
+typedef struct {
+    StpBridgeId rootBridgeId;           // 当前收到的 BPDU 中所宣称的根桥 ID
+    uint32_t rootPathCost;              // 到根桥的到根桥的累计路径开销
+    StpBridgeId designatedBridgeId;     // 指定桥 ID，这个到根最好路径信息是谁代表这个网段发出来的（谁是这个网段的指定桥）
+    uint16_t designatedPortId;          // 指定端口 ID，指定桥用它的哪个端口在这个网段宣告这份信息
+    uint16_t bridgePortId;              // 桥端口 ID，本桥用于保存/接收该向量的端口 ID，也就是接收端口的 Port ID
+} RstpPriority;
+
+typedef struct {
+    uint_t messageAge;
+    uint_t maxAge;
+    uint_t forwardDelay;
+    uint_t helloTime;
+} RstpTimes;
+
+typedef enum {
+    RSTP_INFO_IS_DISABLED = 0,
+    RSTP_INFO_IS_RECEIVED = 1,
+    RSTP_INFO_IS_MINE     = 2,
+    RSTP_INFO_IS_AGED     = 3
+} RstpInfoIs;
+
+void rstpClearReselectTree(RstpBridgeContext *context) {
+    uint_t i;
+    // 清空所有端口的 reselect 变量
+    for(i = 0; i < context->numPorts; i++) {
+        //Clear the reselect variable
+        context->ports[i].reselect = FALSE;
+    }
+}
+
+void rstpUpdtRolesTree(RstpBridgeContext *context) {
+    uint_t i;
+    RstpBridgePort *port;
+    RstpBridgePort *rootPort;
+    RstpPriority rootPathPriority;
+
+    // 假设本桥就是根桥，然后再去遍历本桥的各个端口的信息，查看是否有比本桥作为根桥更优的信息
+    // rootPriority 和 bridgePriority 都属于生成树优先级向量，先假设本桥就是根，把 rootPriority 初始化为 bridgePriority
+    context->rootPriority = context->bridgePriority;
+    // 在本桥是根桥的假设下，根端口并不存在，这里用一个本桥自己的 bridgePortId 字段当占位/默认值
+    context->rootPortId = context->bridgePriority.bridgePortId;
+    // bridgeTimes 的类型是 RstpTimes，表示本桥应当遵循的根计时参数合集，根桥用自己的 BridgeTimes 作为全网计时基准
+    context->rootTimes = context->bridgeTimes;
+    //The port the root priority vector is derived from
+    rootPort = NULL;
+
+    // 遍历本桥的所有端口，选出本桥的最佳根信息（rootPriority/rootTimes）与 RootPort
+    for(i = 0; i < context->numPorts; i++) {
+        port = &context->ports[i];
+        // infoIs 表示每个端口保存的生成树信息来源/状态标志，它是一个枚举，有四种可能的取值：RSTP_INFO_IS_DISABLED、RSTP_INFO_IS_RECEIVED、RSTP_INFO_IS_MINE、RSTP_INFO_IS_AGED，可以理解为端口保存的优先级向量到底是从哪儿来的以及是否还有效
+        // 当 infoIs 等于 RSTP_INFO_IS_RECEIVED 时，表示该端口保存的优先级向量是从对端 BPDU 中收到的，并且该信息仍然有效（没有过期）
+        // PIM 状态机会在收到更优（Superior）的指定信息时：
+        // 1.先调用 rstpRecordPriority(port);/rstpRecordTimes(port); 把收到的 BPDU 携带的信息记录到端口变量里
+        // 2.再更新 rcvdInfoWhile 为 3*helloTime，表示该信息的有效期（rcvdInfoWhile = 0 表示信息过期）
+        // 3.最后把 infoIs 置为 RSTP_INFO_IS_RECEIVED
+        // PIM 状态机的 CURRENT 状态处理过程中：
+        // 1.如果 infoIs == RECEIVED，并且 rcvdInfoWhile == 0
+        // 就把 infoIs 置为 RSTP_INFO_IS_AGED，表示该信息已过期
+        if(port->infoIs == RSTP_INFO_IS_RECEIVED) {
+            // 先把该端口收到的 portPriority 复制出来
+            rootPathPriority = port->portPriority;
+            // 再把本端口 path cost 加到 rootPathCost 上，得到经由该端口到根的代价
+            rootPathPriority.rootPathCost += port->portPathCost;
+
+            // 一个桥有多个转发端口，每个端口有一个 MAC 地址，通常我们把端口号最小的那个端口的 MAC 地址作为整个桥的 MAC 地址
+            // rootPathPriority.designatedBridgeId.addr 表示从该端口收到并记录的 BPDU（portPriority）里带来的 Designated Bridge ID 的桥 MAC
+            // context->bridgePriority.designatedBridgeId.addr 表示桥自身的 bridgePriority 里的 Designated Bridge ID 的桥 MAC
+            // 这个判断条件是为了避免把本桥自己发出的/源自本桥的信息当成外部候选来参与根选择，否则在某些拓扑下会产生不合理的根路径候选，甚至导致角色选择不稳定
+            // 本桥的两个端口被外部线路/Hub/错误接线形成回环，导致本桥从端口 A 发出的 BPDU 被端口 B 收到了
+            if(rstpCompareBridgeAddr(&rootPathPriority.designatedBridgeId.addr, &context->bridgePriority.designatedBridgeId.addr) != 0) {
+                // 比较从该端口收到的优先级向量与当前桥的 rootPriority，比较顺序也是：Root ID -> Path Cost -> Designated Bridge ID -> Designated Port ID -> Bridge Port ID
+                // 如果从该端口收到的优先级向量更优（rstpComparePriority 返回值 > 0），就更新桥的 rootPriority
+                if(rstpComparePriority(&rootPathPriority, &context->rootPriority) > 0) {
+                    //Save current root path priority vector
+                    context->rootPriority = rootPathPriority;
+                    context->rootPortId = rootPathPriority.bridgePortId;
+
+                    rootPort = port;
+
+                    context->rootTimes = port->portTimes;
+                    // 从邻居收到的计时参数转为本桥 rootTimes 时，消息年龄加 1
+                    context->rootTimes.messageAge++;
+                }
+            }
+        }
+    }
+
+    // 为每个端口计算如果我在该段成为 Designated 时应该通告出去的 designatedPriority/designatedTimes
+    for(i = 0; i < context->numPorts; i++) {
+        port = &context->ports[i];
+
+        port->designatedPriority.rootBridgeId = context->rootPriority.rootBridgeId;
+        port->designatedPriority.rootPathCost = context->rootPriority.rootPathCost;
+        port->designatedPriority.designatedBridgeId = context->bridgeId;
+        port->designatedPriority.designatedPortId = port->portId;
+        port->designatedPriority.bridgePortId = port->portId;
+        port->designatedTimes = context->rootTimes;
+        port->designatedTimes.helloTime = context->bridgeTimes.helloTime;
+    }
+
+    // The port role for each port is assigned, and its port priority vector and Spanning Tree timer information are updated
+    for(i = 0; i < context->numPorts; i++) {
+        //Point to the current bridge port
+        port = &context->ports[i];
+
+        // RSTP_INFO_IS_DISABLED 的含义是：端口的生成树信息处于禁用状态，也就是该端口当前不参与生成树计算
+        // 当 PIM 会根据 port->portEnabled = port->macOperState && port->params.adminPortState; 来判断端口是否可以收发帧
+        // 只有该端口当前链路工作状态正常并且管理员配置为启用 STP/RSTP 时，该端口才算 enabled
+        // 因此当 infoIs 等于 RSTP_INFO_IS_DISABLED 时，协议状态机（PIM）判定该端口不参与生成树，于是在角色选择时直接给 Disabled 角色
+        if(port->infoIs == RSTP_INFO_IS_DISABLED) {
+            // If the Port is Disabled, selectedRole is set to DisabledPort
+            port->selectedRole = STP_PORT_ROLE_DISABLED;
+ 
+        // 当 infoIs 等于 RSTP_INFO_IS_AGED 时，表示该端口保存的生成树信息已过期
+        // 因此既然该端口已经没有任何有效的外部（received）优先级向量可参考，那在这个网段上，本桥就按规则先把自己当成指定端口（Designated Port）候选
+        // 同时把 updtInfo 置 TRUE，是为了驱动 PIM 去把端口的 portPriority/portTimes 更新成 designated 值，并准备发 BPDU
+        // 在 PIM 状态机中，在 AGED 状态如果 port->selected && port->updtInfo，就切到 UPDATE 状态；在 UPDATE 状态入状态动作中，会把 portPriority/portTimes 更新成 designatedPriority/designatedTimes，将 infoIs 设置为 RSTP_INFO_IS_MINE，并且将 newInfo 设置为 TRUE，准备发 BPDU
+        } else if(port->infoIs == RSTP_INFO_IS_AGED) {
+            port->selectedRole = STP_PORT_ROLE_DESIGNATED;
+            port->updtInfo = TRUE;
+        
+        // RSTP_INFO_IS_MINE 表示端口当前持有的信息来自本桥自身/本桥其他端口推导
+        // 因此此时 port->portPriority 保存的不是从 BPDU 里记录下来的对端宣告的优先级向量
+        // 而是本桥根据当前选出来的 rootPriority/rootTimes，为该端口计算得到的 designatedPriority/designatedTimes
+        // Mine 说明这个端口当前采用的是我方要在该网段上宣告的 designated 信息，那它的角色自然就是 Designated Port（该段上由我负责发通告的一侧）
+        } else if(port->infoIs == RSTP_INFO_IS_MINE) {
+            port->selectedRole = STP_PORT_ROLE_DESIGNATED;
+
+            // 如果 portPriority/portTimes 变量已经不一致了，就标记 updtInfo，让 PIM 去 UPDATE 一次，把端口信息刷新到最新
+            if(rstpComparePriority(&port->portPriority, &port->designatedPriority) != 0 || rstpCompareTimes(&port->portTimes, &context->rootTimes) != 0) {
+                port->updtInfo = TRUE;
+            }
+
+        // RSTP_INFO_IS_RECEIVED 表示端口当前持有的信息是从对端收到的，并且该信息仍然有效    
+        } else if(port->infoIs == RSTP_INFO_IS_RECEIVED) {
+            if(port == rootPort) {
+                port->selectedRole = STP_PORT_ROLE_ROOT;
+                port->updtInfo = FALSE;
+            } else {
+                // 比较本端口应该宣告的 designatedPriority 与从对端收到并记录下来的 portPriority
+                // 如果本端应宣告的 designatedPriority 更优，就把该端口选为 Designated Port，updtInfo=TRUE，让 PIM 进入 UPDATE
+                // 把 portPriority/Times 刷新为 designatedPriority/Times，并准备发出新的 BPDU
+                if(rstpComparePriority(&port->designatedPriority, &port->portPriority) > 0) {
+                    port->selectedRole = STP_PORT_ROLE_DESIGNATED;
+                    port->updtInfo = TRUE;
+                } else {
+                    // 否则对端（或该段上其他桥）给出的信息不比我差，本端口不能成为 Designated，需要在 Backup/Alternate 之间做区分
+                    MacAddr *addr;
+                    uint16_t portId;
+
+                    // Retrieve the designated bridge and designated port components of the port priority vector
+                    addr = &port->portPriority.designatedBridgeId.addr;
+                    portId = port->portPriority.designatedPortId;
+
+                    // 如果收到的 portPriority 里宣告的 designated bridge 地址 == 本桥自己的桥地址/designatedBridge 是我自己
+                    // 收到的 portPriority 里宣告的 designatedPortId，确实对应本桥上的某个端口/designatedPort 是我桥上的另一个端口
+                    // 这正是 RSTP 里 Backup Port 的语义，同一台桥在同一个 LAN 段上有两个端口，其中一个端口是 designated，另一个端口作为 designated 的备份而阻塞
+                    if(rstpCompareBridgeAddr(addr, &context->bridgeId.addr) == 0 && rstpGetBridgePort(context, portId) != NULL) {
+                        //selectedRole is set to BackupPort and updtInfo is reset
+                        port->selectedRole = STP_PORT_ROLE_BACKUP;
+                        port->updtInfo = FALSE;
+                    // 否则本端口就是 Alternate Port 了    
+                    } else {
+                        //selectedRole is set to AlternatePort and updtInfo is reset
+                        port->selectedRole = STP_PORT_ROLE_ALTERNATE;
+                        port->updtInfo = FALSE;
+                    }
+                }
+            }
+        } else {
+            //Just for sanity
+        }
+    }
+
+    //Loop through the ports of the bridge
+    for(i = 0; i < context->numPorts; i++) {
+        port = &context->ports[i];
+    }
+}
+
+void rstpSetSelectedTree(RstpBridgeContext *context) {
+    uint_t i;
+    bool_t reselect;
+
+    // 1.汇总是否有端口需要重选
+    for(reselect = FALSE, i = 0; i < context->numPorts; i++) {
+        reselect |= context->ports[i].reselect;
+    }
+    // 2.只有当没有端口需要重选时，才把所有端口的 selected 变量置为 TRUE
+    // 如果所有端口的 port->reselect 都是 FALSE，说明这次角色选择没有被任何端口打断/推翻，那么就把所有端口的 selected 置为 TRUE
+    if(!reselect) {
+        //Loop through the ports of the bridge
+        for(i = 0; i < context->numPorts; i++) {
+            context->ports[i].selected = TRUE;
+        }
     }
 }
 ```
@@ -1255,6 +1552,233 @@ bool_t rstpAllSynced(RstpBridgeContext *context) {
 }
 ```
 
+## 九、rstp_misc.c
+
+```c{.line-numbers}
+int_t rstpComparePriority(const RstpPriority *p1, const RstpPriority *p2) {
+
+    int_t res;
+
+    /* Compare priority vectors according to 17.6 rules */
+    if (rstpCompareBridgeId(&p1->rootBridgeId, &p2->rootBridgeId) < 0) {
+        res = 1;
+    } else if (rstpCompareBridgeId(&p1->rootBridgeId, &p2->rootBridgeId) > 0) {
+        res = -1;
+    } else if (p1->rootPathCost < p2->rootPathCost) {
+        res = 1;
+    } else if (p1->rootPathCost > p2->rootPathCost) {
+        res = -1;
+    } else if (rstpCompareBridgeId(&p1->designatedBridgeId, &p2->designatedBridgeId) < 0) {
+        res = 1;
+    } else if (rstpCompareBridgeId(&p1->designatedBridgeId, &p2->designatedBridgeId) > 0) {
+        res = -1;
+    } else if (p1->designatedPortId < p2->designatedPortId) {
+        res = 1;
+    } else if (p1->designatedPortId > p2->designatedPortId) {
+        res = -1;
+    } else if (p1->bridgePortId < p2->bridgePortId) {
+        res = 1;
+    } else if (p1->bridgePortId > p2->bridgePortId) {
+        res = -1;
+    } else {
+        res = 0;
+    }
+    /* Return comparison result */
+    return res;
+}
+
+```
+
+## 十、rstp_pim.c
+
+```c{.line-numbers}
+void rstpPimInit(RstpBridgePort *port) {
+    rstpPimChangeState(port, RSTP_PIM_STATE_DISABLED);
+}
+
+// PIM 它负责维护每个端口当前持有的生成树信息
+void rstpPimFsm(RstpBridgePort *port) {
+    /**
+      * portEnabled:   端口是否启用，链路状态 UP 且管理员启用 STP/RSTP
+      * rcvdMsg:       是否收到过 BPDU 消息
+      * rcvdInfoWhile: 接收信息的保鲜计时器，当它归零时，信息会被判定为 aged out
+      * updtInfo:      端口信息是否需要用本桥计算出的 designated 信息进行更新，portPriority/portTimes 需要刷新为 designatedPriority/designatedTimes
+      * selected/reselect: 桥的端口角色选择流程用的握手标志；PIM 在很多入场动作里把 reselect=TRUE, selected=FALSE，强制外层重新跑一次角色选择树（roles tree）
+      */
+    // 只要端口不再可用，无论端口 infoIs 当前在哪个 PIM 状态，都立即强制切到 DISABLED
+    if (!port->portEnabled && port->infoIs != RSTP_INFO_IS_DISABLED) {
+        rstpPimChangeState(port, RSTP_PIM_STATE_DISABLED);
+    } else {
+
+        switch (port->pimState) {
+        case RSTP_PIM_STATE_DISABLED:
+            // 禁用态下如果还收到了 BPDU（rcvdMsg=TRUE），就重新进入一次 DISABLED 以触发 entry action，即禁用口收到 BPDU 也不处理，只是清掉我收到了消息这个标志，保持禁用态干净。
+            if (port->rcvdMsg) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_DISABLED);
+            // 如果端口恢复可用（portEnabled=TRUE），就从 DISABLED 切到 AGED，也就是端口刚恢复，先当作没有任何可信的接收信息（AGED 起点）
+            } else if (port->portEnabled) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_AGED);
+            } else {
+            }
+            break;
+
+        case RSTP_PIM_STATE_AGED:
+            // AGED 只是声明端口原先接收来的信息已失效，并不代表立刻就该用本桥信息覆盖并对外宣告
+            // 因此它要等到 selected && updtInfo 成立后才进入 UPDATE，把端口信息切换为 MINE 并置 newInfo=TRUE
+            // 先让全桥的角色/根信息计算结果稳定，再在确实需要同步端口信息时（updtInfo 为 true 表示不一致） 才更新和触发发送，避免在角色未定时发出自相矛盾的 BPDU、减少无意义的覆盖与抖动，同时防止把最终应为 Alternate/Backup/Disabled 的端口误写成可宣告的 designated 信息
+            if (port->selected && port->updtInfo) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_UPDATE);
+            }
+            break;
+
+        case RSTP_PIM_STATE_UPDATE:
+        case RSTP_PIM_STATE_SUPERIOR_DESIGNATED:
+        case RSTP_PIM_STATE_REPEATED_DESIGNATED:
+        case RSTP_PIM_STATE_INFERIOR_DESIGNATED:
+        case RSTP_PIM_STATE_NOT_DESIGNATED:
+        case RSTP_PIM_STATE_OTHER:
+            rstpPimChangeState(port, RSTP_PIM_STATE_CURRENT);
+            break;
+
+        case RSTP_PIM_STATE_CURRENT:
+            // 本轮全桥的角色/优先级计算已经提交完成 并且 Cyclone 里注释是提示需要更新 portPriority 和 portTimes
+            // UPDATE 就是把端口信息更新为本桥计算出的 designated 信息
+            if (port->selected && port->updtInfo) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_UPDATE);
+
+            // 只有在真的没有新报文、也没有待提交更新的情况下，才把 RECEIVED 判定为过期，避免出现计时器刚好到 0 但新 BPDU 同时来了时的无谓 AGED 之间的 RECEIVE 来回震荡。
+            } else if (port->infoIs == RSTP_INFO_IS_RECEIVED && port->rcvdInfoWhile == 0 && !port->updtInfo && !port->rcvdMsg) {
+                //Switch to AGED state
+                rstpPimChangeState(port, RSTP_PIM_STATE_AGED);
+
+            // 进入 UPDATE 后，会把 portPriority/portTimes 覆盖成 designatedPriority/designatedTimes，把 infoIs 设为 MINE，并置 newInfo=TRUE，这相当于把本端口要对外宣告/持有的信息正式提交并准备发出去
+            // 必须要 !updtInfo 是因为 RECEIVE 的分类结果依赖当前端口持有的信息，rstpRcvInfo 会把收到的 msgPriority/msgTimes 和端口当前的 portPriority/portTimes 做比较，从而判定 Superior/Repeated/Inferior/Other。若 updtInfo==TRUE 说明端口当前信息马上就要被 UPDATE 覆盖，那么此时用旧的 portPriority/Times 去分类，结果可能马上失效
+            } else if (port->rcvdMsg && !port->updtInfo) {
+                //Switch to RECEIVE state
+                rstpPimChangeState(port, RSTP_PIM_STATE_RECEIVE);
+            } else {
+                //Just for sanity
+            }
+            break;
+
+        case RSTP_PIM_STATE_RECEIVE:
+            if (port->rcvdInfo == RSTP_RCVD_INFO_SUPERIOR_DESIGNATED) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_SUPERIOR_DESIGNATED);
+            } else if (port->rcvdInfo == RSTP_RCVD_INFO_REPEATED_DESIGNATED) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_REPEATED_DESIGNATED);
+            } else if (port->rcvdInfo == RSTP_RCVD_INFO_INFERIOR_DESIGNATED) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_INFERIOR_DESIGNATED);
+            } else if (port->rcvdInfo == RSTP_RCVD_INFO_INFERIOR_ROOT_ALTERNATE) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_NOT_DESIGNATED);
+            } else if (port->rcvdInfo == RSTP_RCVD_INFO_OTHER) {
+                rstpPimChangeState(port, RSTP_PIM_STATE_OTHER);
+            } else {
+            }
+            break;
+
+        default:
+            rstpFsmError(port->context);
+            break;
+        }
+    }
+}
+
+void rstpPimChangeState(RstpBridgePort *port, RstpPimState newState) {
+    port->pimState = newState;
+
+    switch (port->pimState) {
+    case RSTP_PIM_STATE_DISABLED:
+        port->rcvdMsg = FALSE;
+        port->proposing = FALSE;
+        port->proposed = FALSE;
+        port->agree = FALSE;
+        port->agreed = FALSE;
+        port->rcvdInfoWhile = 0;
+        port->infoIs = RSTP_INFO_IS_DISABLED;
+        port->reselect = TRUE;
+        port->selected = FALSE;
+        break;
+
+    case RSTP_PIM_STATE_AGED:
+        port->infoIs = RSTP_INFO_IS_AGED;
+        port->reselect = TRUE;
+        port->selected = FALSE;
+        break;
+
+    case RSTP_PIM_STATE_UPDATE:
+        port->proposing = FALSE;
+        port->proposed = FALSE;
+        port->agreed = port->agreed && rstpBetterOrSameInfo(port, RSTP_INFO_IS_MINE);
+
+#if defined(RSTP_PIM_WORKAROUND_1)
+        //Errata
+        if (port->forward) {
+            port->agreed = port->sendRstp;
+        }
+#endif
+
+        port->synced = port->synced && port->agreed;
+        port->portPriority = port->designatedPriority;
+        port->portTimes = port->designatedTimes;
+        port->updtInfo = FALSE;
+        port->infoIs = RSTP_INFO_IS_MINE;
+        port->newInfo = TRUE;
+        break;
+
+    case RSTP_PIM_STATE_SUPERIOR_DESIGNATED:
+        port->agreed = FALSE;
+        port->proposing = FALSE;
+        rstpRecordProposal(port);
+        rstpSetTcFlags(port);
+
+        port->agree = port->agree && rstpBetterOrSameInfo(port, RSTP_INFO_IS_RECEIVED);
+
+        rstpRecordPriority(port);
+        rstpRecordTimes(port);
+        rstpUpdtRcvdInfoWhile(port);
+        port->infoIs = RSTP_INFO_IS_RECEIVED;
+        port->reselect = TRUE;
+        port->selected = FALSE;
+        port->rcvdMsg = FALSE;
+        break;
+
+    case RSTP_PIM_STATE_REPEATED_DESIGNATED:
+        rstpRecordProposal(port);
+        rstpSetTcFlags(port);
+        rstpUpdtRcvdInfoWhile(port);
+        port->rcvdMsg = FALSE;
+        break;
+
+    case RSTP_PIM_STATE_INFERIOR_DESIGNATED:
+        rstpRecordDispute(port);
+        port->rcvdMsg = FALSE;
+        break;
+
+    case RSTP_PIM_STATE_NOT_DESIGNATED:
+        rstpRecordAgreement(port);
+        rstpSetTcFlags(port);
+        port->rcvdMsg = FALSE;
+        break;
+
+    case RSTP_PIM_STATE_OTHER:
+        port->rcvdMsg = FALSE;
+        break;
+
+    case RSTP_PIM_STATE_CURRENT:
+        break;
+
+    case RSTP_PIM_STATE_RECEIVE:
+        port->rcvdInfo = rstpRcvInfo(port);
+        break;
+
+    default:
+        break;
+    }
+
+    port->context->busy = TRUE;
+}
+```
+
 ## 解析
 
 ### 1.初始化 
@@ -1297,7 +1821,7 @@ Port Role Transitions 状态机为了让一个 Designated Port（指定端口）
 
 随后根端口想要进入 ROOT_AGREED 状态，需要 **`rstpAllSynced(context) && !port->agree`** 为真，或 **`proposed && agree`** 为真，前者表示所有端口都已经同步完成，后者表示本端口已经同意对端的 Proposal，后面又收到对端的 Proposal 报文。而 **`rstpAllSynced()`** 的判定非常关键，它主要要求 **`(port->synced == TRUE) || (port->role == ROOT)`**，也就是根端口发 Agreement 之前，必须等其他端口都把 synced 变成 TRUE（根端口自己 role==ROOT 例外）。
 
-此时本桥上其他 DP 端口如果已经处于同步/安全状态，比如已经处于 agreed 状态（处于可以安全快速转发的证明），已经处于 synced 状态（处于同步完成的证明，因为本桥上可能同时有 2 个正在 P/A 协商的端口），或者本端口是边缘端口（edge port），或者本端口本身既不处于学习状态，也不处于转发状态。如果 DP 端口处于上述状态时，就没有必要进入丢弃状态，直接执行 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_SYNCED);`** 函数，将 synced 置为 true，sync 设置为 false，rrWhile 设置为 0，表示本端口已经同步完成，可以安全转发数据。否则如果当 sync==1 且 synced==0，并且这个 DP 当前还在 learn 或 forward（而且不是 edge 口）时，就会将该端口进入 **`RSTP_PRT_STATE_DESIGNATED_DISCARD`** 状态，确保端口不会转发数据，等待同步完成。
+此时本桥上其他 DP 端口如果已经处于同步/安全状态，比如已经处于 agreed 状态（处于可以安全快速转发的证明），已经处于 synced 状态（处于同步完成的证明，因为本桥上可能同时有 2 个正在 P/A 协商的端口），或者本端口是边缘端口（edge port），或者本端口本身既不处于学习状态，也不处于转发状态。如果 DP 端口处于上述状态时，就没有必要进入丢弃状态，直接执行 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_SYNCED);`** 函数，将 synced 置为 true，sync 设置为 false，rrWhile 设置为 0，表示本端口已经同步完成，可以安全转发数据。否则如果当 **`sync == 1 and synced == 0`**，并且这个 DP 当前还在 learn 或 forward（而且不是 edge 口）时，就会将该端口进入 **`RSTP_PRT_STATE_DESIGNATED_DISCARD`** 状态，确保端口不会转发数据，等待同步完成。
 
 假设所有端口都已经同步完成，那么会调用 **`rstpPrtRootPortChangeState(port, RSTP_PRT_STATE_ROOT_AGREED);`** 函数，将根端口的 agree 置为 true，proposed 设置为 false，sync 设置为 false，触发 Agreement 流程。同时将 newInfo 置为 true，接下来由 PTX 看到 newInfo 条件为真，就去发送 Agreement RSTP BPDU 报文。
 
@@ -1306,3 +1830,5 @@ Port Role Transitions 状态机为了让一个 Designated Port（指定端口）
 DP 端口在收到对端发回的 Agreement 后，PIM 会在合适的分支里调用 **`rstpRecordAgreement()`** 函数，只有当运行在 RSTP 版本，且端口被判定为点到点链路，且收到的 BPDU Agreement 位=1 时，才把本 DP 端口的 **`port->agreed = TRUE`**，并清掉 **`port->proposing`**。随后调用 **`rstpPrtFsm()`** 函数时，由于端口的 role 是 Designated，selectedRole 也是 Designated，所以会进入 **`rstpPrtDesignatedPortFsm()`** 函数。接着由于 **`((port->fdWhile == 0 || port->agreed || port->operEdge) && (port->rrWhile == 0 || !port->reRoot) && !port->sync)`**，所以会快速进入 LEARNING 状态，进而进入 FORWARDING 状态，实现快速收敛转发数据。
 
 >注意，如果不是 RP 端口而是 AP 端口收到 proposal 报文，那么也会发送 Agreement 报文给对端，从而让对端 DP 端口快速进入转发状态。但是由于调用 **`rstpSetSyncTree`** 函数将 AP 端口本身的 sync 也设置为 true，因此 **`(port->fdWhile != rstpForwardDelay(port) || port->sync || port->reRoot || !port->synced)`** 判断通过，会进入 **`RSTP_PRT_STATE_ALTERNATE_PORT`** 状态分支，将 sync 设置为 false，synced 设置为 true，表示已经同步，并且 AP 端口的 learn 和 forward 一直设置为 false，确保此 AP 端口不会进入转发状态。
+
+### 4.
