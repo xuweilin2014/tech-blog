@@ -817,6 +817,28 @@ void rstpPtxChangeState(RstpBridgePort *port, RstpPtxState newState) {
 ```c{.line-numbers}
 // rstp_procedures.c
 
+void rstpSetTcFlags(RstpBridgePort *port) {
+    const RstpBpdu *bpdu;
+    bpdu = &port->context->bpdu;
+
+    //Check BPDU type
+    if(bpdu->bpduType == RSTP_BPDU_TYPE_CONFIG || bpdu->bpduType == RSTP_BPDU_TYPE_RST) {
+        // Sets rcvdTc and/or rcvdTcAck if the Topology Change and/or Topology Change Acknowledgment flags, respectively, are set in a Configuration BPDU or RST BPDU
+        if((bpdu->flags & RSTP_BPDU_FLAG_TC) != 0) {
+            port->rcvdTc = TRUE;
+        }
+        if((bpdu->flags & RSTP_BPDU_FLAG_TC_ACK) != 0) {
+            port->rcvdTcAck = TRUE;
+        }
+    } else if(bpdu->bpduType == RSTP_BPDU_TYPE_TCN) {
+        //Set rcvdTcn TRUE if the BPDU is a TCN BPDU
+        port->rcvdTcn = TRUE;
+    } else {
+        //Just for sanity
+    }
+}
+
+
 typedef enum {
    RSTP_BPDU_TYPE_CONFIG = 0x00,
    RSTP_BPDU_TYPE_TCN    = 0x80,
@@ -1756,6 +1778,7 @@ void rstpPimChangeState(RstpBridgePort *port, RstpPimState newState) {
 
     case RSTP_PIM_STATE_NOT_DESIGNATED:
         rstpRecordAgreement(port);
+        // 
         rstpSetTcFlags(port);
         port->rcvdMsg = FALSE;
         break;
@@ -1769,6 +1792,153 @@ void rstpPimChangeState(RstpBridgePort *port, RstpPimState newState) {
 
     case RSTP_PIM_STATE_RECEIVE:
         port->rcvdInfo = rstpRcvInfo(port);
+        break;
+
+    default:
+        break;
+    }
+
+    port->context->busy = TRUE;
+}
+```
+
+## 十一、rstp_tcm.c
+
+```c{.line-numbers}
+void rstpTcmInit(RstpBridgePort *port) {
+    rstpTcmChangeState(port, RSTP_TCM_STATE_INACTIVE);
+}
+
+/**
+  * rcvdTc:收到 RSTP BPDU/STP Config BPDU 时，BPDU 的 flags 里 TC bit=1，表明对端拓扑变化正在发生/刚发生过，对端处于 TC 宣告窗口（tcWhile 期间）
+  * rcvdTcn:收到 TCN BPDU（这是一种老 STP 里的专用报文类型）
+  * rcvdTcAck:收到 STP Config BPDU 时，flags 里 TCA bit=1，注意 RSTP BPDU 里这个位不使用/置 0，Cyclone 发送 RSTP BPDU 时也注明了 TC_ACK 不用
+  * rstpNewTcWhile():用于启动/更新 tcWhile，并在需要时更新拓扑变化计数等。
+  * rstpSetTcPropTree():用于把 tcProp 设置到除自身端口外的其它端口上，以触发它们后续发送带 TC 的 BPDU，实现拓扑变化传播
+  */
+void rstpTcmFsm(RstpBridgePort *port) {
+
+    switch (port->tcmState) {
+    case RSTP_TCM_STATE_INACTIVE:
+        // 在 rstpTcmInit 函数中，将 tcmState 设置为 RSTP_TCM_STATE_INACTIVE
+        // 在 rstpTcmChangeState 函数中，一进入 INACTIVE，TCM 就把 fdbFlush 置 TRUE，然后在 rstpFsm 函数中调用 rstpRemoveFdbEntries 函数对 FDB/桥转发表模块真正执行 flush 后，把 fdbFlush 设置为 FALSE
+        // 所以 !fdbFlush 的意义是：避免在旧的转发表项还没清干净时就开始学习新 MAC，否则容易出现拓扑变化后短时间内错误转发/错误学习的副作用
+        if (port->learn && !port->fdbFlush) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_LEARNING);
+        }
+        break;
+
+    case RSTP_TCM_STATE_LEARNING:
+        // LEARNING：这个状态的一个关键作用是吸收/清空事件标志，进入该状态时会把 rcvdTc/rcvdTcn/rcvdTcAck/tcProp 清零
+        // 如果检测到任一 TC 相关事件标志为 TRUE，则再次切换到 LEARNING，通过重新进入状态的入口动作把这些标志清掉，表示事件已被消费
+        if (port->rcvdTc || port->rcvdTcn || port->rcvdTcAck || port->tcProp) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_LEARNING);
+        // 如果端口角色是 Root/Designated，且端口允许转发 (forward=TRUE)，并且不是边缘端口 (operEdge=FALSE)，
+        // 说明一个树端口进入了可以转发的阶段——这在 RSTP 中被视为一次拓扑变化触发点，转到 DETECTED 去启动 tcWhile、触发传播等动作
+        // In RSTP, only non-edge ports that move to the forwarding state cause a topology change. This means that a loss of connectivity is not considered as a topology change any more, contrary to 802.1D (that is, a port that moves to blocking no longer generates a TC)
+        // 只有非边缘端口切换到转发状态时才被定义为拓扑变动，非边缘端口丢失连接不会触发拓扑变化通知
+        } else if ((port->role == STP_PORT_ROLE_ROOT ||
+                    port->role == STP_PORT_ROLE_DESIGNATED) &&
+                   port->forward && !port->operEdge) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_DETECTED);
+        // 若端口既不是 Root/Designated，且也不处于学习允许/学习中状态，并且没有任何 TC 相关事件，则可以回到 INACTIVE
+        } else if (port->role != STP_PORT_ROLE_ROOT &&
+                   port->role != STP_PORT_ROLE_DESIGNATED &&
+                   !(port->learn || port->learning) &&
+                   !(port->rcvdTc || port->rcvdTcn || port->rcvdTcAck || port->tcProp)) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_INACTIVE);
+        } else {
+        }
+        break;
+
+    case RSTP_TCM_STATE_NOTIFIED_TCN:
+        rstpTcmChangeState(port, RSTP_TCM_STATE_NOTIFIED_TC);
+        break;
+
+    // 这些状态都是一次性动作状态：无条件进入 ACTIVE 作为稳定运行状态。
+    case RSTP_TCM_STATE_DETECTED:
+    case RSTP_TCM_STATE_NOTIFIED_TC:
+    case RSTP_TCM_STATE_PROPAGATING:
+    case RSTP_TCM_STATE_ACKNOWLEDGED:
+        rstpTcmChangeState(port, RSTP_TCM_STATE_ACTIVE);
+        break;
+
+    case RSTP_TCM_STATE_ACTIVE:
+        // 如果端口不再是 Root/Designated，或者端口成为边缘端口 (operEdge=TRUE)，就不应继续作为 TC 的树端口处理，回到 LEARNING
+        if ((port->role != STP_PORT_ROLE_ROOT && port->role != STP_PORT_ROLE_DESIGNATED) || port->operEdge) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_LEARNING);
+        } else if (port->rcvdTcn) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_NOTIFIED_TCN);
+        // 收到 TC 标志，进入 NOTIFIED_TC，会调用 rstpSetTcPropTree 函数，将 tcProp 设置为 true，然后发送带 TC 标志位的 BPDU，
+        // 然后其他桥收到 TC 标志位的 BPDU 时，也会将 tcProp 设置为 true，然后继续扩散发送 BPDU（TC=1）到全树
+        } else if (port->rcvdTc) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_NOTIFIED_TC);
+        // 需要传播 TC：进入 PROPAGATING，tcProp 由 rstpSetTcPropTree() 在其他端口上置位，这里处理时要求该端口不是边缘端口
+        } else if (port->tcProp && !port->operEdge) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_PROPAGATING);
+        } else if (port->rcvdTcAck) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_ACKNOWLEDGED);
+        } else {
+        }
+        break;
+
+    default:
+        rstpFsmError(port->context);
+        break;
+    }
+}
+
+void rstpTcmChangeState(RstpBridgePort *port, RstpTcmState newState) {
+    port->tcmState = newState;
+
+    switch (port->tcmState) {
+    case RSTP_TCM_STATE_INACTIVE:
+        port->fdbFlush = TRUE;
+        port->tcWhile = 0;
+        port->tcAck = FALSE;
+        break;
+
+    case RSTP_TCM_STATE_LEARNING:
+        port->rcvdTc = FALSE;
+        port->rcvdTcn = FALSE;
+        port->rcvdTcAck = FALSE;
+        port->tcProp = FALSE;
+        break;
+
+    case RSTP_TCM_STATE_DETECTED:
+        // 根据 ieee 802.1d-2004 规范，If the value of tcWhile is zero and sendRstp is true, this procedure sets the value of tcWhile to HelloTime plus one second and sets newInfo true.
+        rstpNewTcWhile(port);
+        rstpSetTcPropTree(port);
+        port->newInfo = TRUE;
+        break;
+
+    case RSTP_TCM_STATE_NOTIFIED_TCN:
+        rstpNewTcWhile(port);
+        break;
+
+    case RSTP_TCM_STATE_NOTIFIED_TC:
+        port->rcvdTcn = FALSE;
+        port->rcvdTc = FALSE;
+
+        if (port->role == STP_PORT_ROLE_DESIGNATED) {
+            port->tcAck = TRUE;
+        }
+
+        rstpSetTcPropTree(port);
+        break;
+
+    case RSTP_TCM_STATE_PROPAGATING:
+        rstpNewTcWhile(port);
+        port->fdbFlush = TRUE;
+        port->tcProp = FALSE;
+        break;
+
+    case RSTP_TCM_STATE_ACKNOWLEDGED:
+        port->tcWhile = 0;
+        port->rcvdTcAck = FALSE;
+        break;
+
+    case RSTP_TCM_STATE_ACTIVE:
         break;
 
     default:
@@ -1819,7 +1989,7 @@ Port Role Transitions 状态机为了让一个 Designated Port（指定端口）
 
 当根端口收到这个 Proposal 报文后，会调用 **`rstpRecordProposal(port);`** 函数，只有当收到的 BPDU 端口角色=Designated，且 Proposal 位=1 时，才把本根端口的 **`port->proposed = TRUE`**。随后调用 **`rstpPrtFsm()`** 函数时，由于端口的 role 是 Root，selectedRole 也是 Root，所以会进入 **`rstpPrtRootPortFsm()`** 函数的 **`RSTP_PRT_STATE_ROOT_PORT`** 状态分支。由于 proposed 为 true，agree 为 false，所以会进入第 1 个 if 分支，调用 **`rstpPrtRootPortChangeState(port, RSTP_PRT_STATE_ROOT_PROPOSED);`** 函数，将 proposed 设置为 false，并且继续调用 **`rstpSetSyncTree(port->context)`** 函数，将本桥所有端口的 sync 变量设置为 true。即 Root Port 收到 Proposal 后，先要求本桥所有相关端口进入同步流程，确保不会瞬间形成环路。
 
-随后根端口想要进入 ROOT_AGREED 状态，需要 **`rstpAllSynced(context) && !port->agree`** 为真，或 **`proposed && agree`** 为真，前者表示所有端口都已经同步完成，后者表示本端口已经同意对端的 Proposal，后面又收到对端的 Proposal 报文。而 **`rstpAllSynced()`** 的判定非常关键，它主要要求 **`(port->synced == TRUE) || (port->role == ROOT)`**，也就是根端口发 Agreement 之前，必须等其他端口都把 synced 变成 TRUE（根端口自己 role==ROOT 例外）。
+随后根端口想要进入 **`ROOT_AGREED`** 状态，需要 **`rstpAllSynced(context) && !port->agree`** 为真，或 **`proposed && agree`** 为真，前者表示所有端口都已经同步完成，后者表示本端口已经同意对端的 Proposal，后面又收到对端的 Proposal 报文。而 **`rstpAllSynced()`** 的判定非常关键，它主要要求 **`(port->synced == TRUE) || (port->role == ROOT)`**，也就是根端口发 Agreement 之前，必须等其他端口都把 synced 变成 TRUE（根端口自己 role==ROOT 例外）。
 
 此时本桥上其他 DP 端口如果已经处于同步/安全状态，比如已经处于 agreed 状态（处于可以安全快速转发的证明），已经处于 synced 状态（处于同步完成的证明，因为本桥上可能同时有 2 个正在 P/A 协商的端口），或者本端口是边缘端口（edge port），或者本端口本身既不处于学习状态，也不处于转发状态。如果 DP 端口处于上述状态时，就没有必要进入丢弃状态，直接执行 **`rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_SYNCED);`** 函数，将 synced 置为 true，sync 设置为 false，rrWhile 设置为 0，表示本端口已经同步完成，可以安全转发数据。否则如果当 **`sync == 1 and synced == 0`**，并且这个 DP 当前还在 learn 或 forward（而且不是 edge 口）时，就会将该端口进入 **`RSTP_PRT_STATE_DESIGNATED_DISCARD`** 状态，确保端口不会转发数据，等待同步完成。
 
@@ -1831,4 +2001,18 @@ DP 端口在收到对端发回的 Agreement 后，PIM 会在合适的分支里�
 
 >注意，如果不是 RP 端口而是 AP 端口收到 proposal 报文，那么也会发送 Agreement 报文给对端，从而让对端 DP 端口快速进入转发状态。但是由于调用 **`rstpSetSyncTree`** 函数将 AP 端口本身的 sync 也设置为 true，因此 **`(port->fdWhile != rstpForwardDelay(port) || port->sync || port->reRoot || !port->synced)`** 判断通过，会进入 **`RSTP_PRT_STATE_ALTERNATE_PORT`** 状态分支，将 sync 设置为 false，synced 设置为 true，表示已经同步，并且 AP 端口的 learn 和 forward 一直设置为 false，确保此 AP 端口不会进入转发状态。
 
-### 4.
+### 4.Topology Change 通知
+
+首先，TC 相关的收到事件入口是 **`rstpSetTcFlags()`**，当端口收到 RST BPDU 报文且 flags 里带 TC 时，就置 rcvdTC。这个 TC 标志位并不是直接发出去，而是交给 TCM 状态机去消费和驱动后续动作。接着，TCM 状态机在 **`LEARNING/ACTIVE`** 等状态里会持续观察 **`rcvdTc/rcvdTcn/rcvdTcAck/tcProp`** 等条件。
+
+比如在 LEARNING 里，只要有任意一个置位（含 tcProp），就会再次进入 LEARNING，相当于消化/清理收到的事件标志；而当端口是 **`Root/Designated`**、处于转发且不是 edge 口时，TCM 会进入 **`DETECTED`**，把拓扑变化正式转换成要对外传播的动作序列。一旦进入 **`DETECTED`**（本端口检测到/需要触发 TC），CycloneSTP 做了三件非常关键的事：
+
+- 调 **`rstpNewTcWhile(port)`**：如果 **`tcWhile==0`** 才启动一次 TC 窗口，并且在 **`sendRstp==TRUE`** 时，把 tcWhile 设为 **`HelloTime+1`** 且置 **`newInfo=TRUE`** 表示立刻触发发送；
+- 调 **`rstpSetTcPropTree(port)`**：把除本端口之外的所有端口的任务广播给整桥其它端口；
+- 再额外把本端口 **`newInfo=TRUE`**，确保本端口马上进入要发 BPDU 的路径；
+
+然后是发 **`TC-bit`**，CycloneSTP 在构造 Config BPDU 时明确规定，只要端口 **`tcWhile != 0`** 就把 BPDU 的 TC 标志位置 1，所以 tcWhile 本质上就是在一段时间窗口内持续携带 TC 位的开关，而 newInfo 是现在就该发一帧出去的触发器。
+
+最后是把事件扩散到全树并触发 fdbFlush，当其它端口因为 **`rstpSetTcPropTree()`** 被置了 **`tcProp=TRUE`** 后，在 TCM 的 ACTIVE 状态里会命中 **`tcProp && !operEdge`** 的条件并转到 PROPAGATING。进入 PROPAGATING 时，CycloneSTP 会再次 **`rstpNewTcWhile(port)`**，让该端口也进入 TC 窗口并且后续发出的 BPDU 也带 TC 位，同时把 **`fdbFlush=TRUE`** 并清掉 tcProp（避免重复传播）。这就是 tcProp 把事件扩散到全树以及 fdbFlush 刷新转发表的落地实现。
+
+虽然 **`rstpSetTcPropTree()`** 会把需要传播拓扑变化的标记（tcProp）置到本桥除本端口外的所有端口上，但在 Cyclone 的 TCM 状态机里，并不是所有端口都会真正参与传播。在 ACTIVE 状态下，TCM 会先做筛选：如果端口不是 RP/DP，或者该端口是边缘口（operEdge 为真），就会被切回 LEARNING，相当于被排除在 TC 传播之外；只有满足参与条件的端口，才会在检测到 **`tcProp && !operEdge`** 时进入 PROPAGATING 状态。即 **`tcPropTree`** 先把要传播 TC 的事件扩散到本桥所有端口；但只有非边缘并且角色为 DP/RP（并处在 ACTIVE/转发相关路径上）的端口会进入 PROPAGATING，从而启动自己的 tcWhile，最终让它们发出去的 BPDU 带 TC 位。
