@@ -887,13 +887,14 @@ RstpRcvdInfo rstpRcvInfo(RstpBridgePort *port) {
         role = RSTP_BPDU_FLAG_PORT_ROLE_UNKNOWN;
     }
 
+    // 如果发送 BPDU 的端口类型是 DP 端口
     if (role == RSTP_BPDU_FLAG_PORT_ROLE_DESIGNATED) {
         // 比较本端口收到的 BPDU 里解出来的消息优先级向量 msgPriority，以及该端口当前保存/持有的优先级向量 portPriority
         // rstpComparePriority 返回大于 0 表示 msgPriority 更优先，小于 0 表示 portPriority 更优先，等于 0 表示两者相等
         res = rstpComparePriority(&port->msgPriority, &port->portPriority);
 
         // 消息向量 superior 的条件：要么消息向量更好；要么 Designated Bridge 的 Bridge Address 分量 + Designated Port 的 Port Number 分量相同
-        // 因此即使这次 BPDU 的完整优先级向量看起来更差，只要它仍来自同一个 designated bridge + 同一个 designated port（端口号一致），Cyclone 仍把它归为 Superior，从而刷新/重记收到的信息
+        // 因此即使这次 BPDU 的完整优先级向量看起来更差，只要它仍来自同一个 designated bridge + 同一个 designated port（端口号一致），Cyclone 仍把它归为 Superior，从而刷新/重记收到的信息（说明拓扑或者链路状态可能有变化）
         if (res < 0) {
             if (rstpCompareBridgeAddr(&port->msgPriority.designatedBridgeId.addr,
                     &port->portPriority.designatedBridgeId.addr) == 0 &&
@@ -915,6 +916,7 @@ RstpRcvdInfo rstpRcvInfo(RstpBridgePort *port) {
         } else {
             portInfo = RSTP_RCVD_INFO_INFERIOR_DESIGNATED;
         }
+    // 如果发送 BPDU 的端口类型是非 DP 端口
     // 在 RSTP 里，非 Designated 端口（Root/Alternate/Backup）也会发 RST BPDU，并且可能携带 Agreement 位，用于快速同步（proposal/agreement 机制）
     // 因此标准/实现会把它归为一个特殊类别：InferiorRootAlternateInfo
     } else if (role == RSTP_BPDU_FLAG_PORT_ROLE_ROOT || role == RSTP_BPDU_FLAG_PORT_ROLE_ALT_BACKUP) {
@@ -1133,7 +1135,7 @@ void rstpUpdtRolesTree(RstpBridgeContext *context) {
     context->rootPriority = context->bridgePriority;
     // 在本桥是根桥的假设下，根端口并不存在，这里用一个本桥自己的 bridgePortId 字段当占位/默认值
     context->rootPortId = context->bridgePriority.bridgePortId;
-    // bridgeTimes 的类型是 RstpTimes，表示本桥应当遵循的根计时参数合集，根桥用自己的 BridgeTimes 作为全网计时基准
+    // bridgeTimes 的类型是 RstpTimes 结构体，表示本桥应当遵循的根计时参数合集，根桥用自己的 BridgeTimes 作为全网计时基准
     context->rootTimes = context->bridgeTimes;
     //The port the root priority vector is derived from
     rootPort = NULL;
@@ -1142,14 +1144,12 @@ void rstpUpdtRolesTree(RstpBridgeContext *context) {
     for(i = 0; i < context->numPorts; i++) {
         port = &context->ports[i];
         // infoIs 表示每个端口保存的生成树信息来源/状态标志，它是一个枚举，有四种可能的取值：RSTP_INFO_IS_DISABLED、RSTP_INFO_IS_RECEIVED、RSTP_INFO_IS_MINE、RSTP_INFO_IS_AGED，可以理解为端口保存的优先级向量到底是从哪儿来的以及是否还有效
-        // 当 infoIs 等于 RSTP_INFO_IS_RECEIVED 时，表示该端口保存的优先级向量是从对端 BPDU 中收到的，并且该信息仍然有效（没有过期）
+        // 当 infoIs 等于 RSTP_INFO_IS_RECEIVED 时，表示该端口保存的更优的优先级向量是从对端 BPDU 中收到的，并且该信息仍然有效（没有过期）
         // PIM 状态机会在收到更优（Superior）的指定信息时：
         // 1.先调用 rstpRecordPriority(port);/rstpRecordTimes(port); 把收到的 BPDU 携带的信息记录到端口变量里
         // 2.再更新 rcvdInfoWhile 为 3*helloTime，表示该信息的有效期（rcvdInfoWhile = 0 表示信息过期）
         // 3.最后把 infoIs 置为 RSTP_INFO_IS_RECEIVED
         // PIM 状态机的 CURRENT 状态处理过程中：
-        // 1.如果 infoIs == RECEIVED，并且 rcvdInfoWhile == 0
-        // 就把 infoIs 置为 RSTP_INFO_IS_AGED，表示该信息已过期
         if(port->infoIs == RSTP_INFO_IS_RECEIVED) {
             // 先把该端口收到的 portPriority 复制出来
             rootPathPriority = port->portPriority;
@@ -1158,9 +1158,10 @@ void rstpUpdtRolesTree(RstpBridgeContext *context) {
 
             // 一个桥有多个转发端口，每个端口有一个 MAC 地址，通常我们把端口号最小的那个端口的 MAC 地址作为整个桥的 MAC 地址
             // rootPathPriority.designatedBridgeId.addr 表示从该端口收到并记录的 BPDU（portPriority）里带来的 Designated Bridge ID 的桥 MAC
-            // context->bridgePriority.designatedBridgeId.addr 表示桥自身的 bridgePriority 里的 Designated Bridge ID 的桥 MAC
+            // bridgePriority.designatedBridgeId.addr 表示桥自身的 bridgePriority 里的 Designated Bridge ID 的桥 MAC
             // 这个判断条件是为了避免把本桥自己发出的/源自本桥的信息当成外部候选来参与根选择，否则在某些拓扑下会产生不合理的根路径候选，甚至导致角色选择不稳定
-            // 本桥的两个端口被外部线路/Hub/错误接线形成回环，导致本桥从端口 A 发出的 BPDU 被端口 B 收到了
+            // 比如本桥的两个端口被外部线路/Hub/错误接线形成回环，导致本桥从端口 A 发出的 BPDU 被端口 B 收到了
+            // 在桥级的 context->bridgePriority 这个桥级基准向量中，designatedBridgeId 就是本桥的 bridgeId
             if(rstpCompareBridgeAddr(&rootPathPriority.designatedBridgeId.addr, &context->bridgePriority.designatedBridgeId.addr) != 0) {
                 // 比较从该端口收到的优先级向量与当前桥的 rootPriority，比较顺序也是：Root ID -> Path Cost -> Designated Bridge ID -> Designated Port ID -> Bridge Port ID
                 // 如果从该端口收到的优先级向量更优（rstpComparePriority 返回值 > 0），就更新桥的 rootPriority
@@ -1213,7 +1214,7 @@ void rstpUpdtRolesTree(RstpBridgeContext *context) {
             port->selectedRole = STP_PORT_ROLE_DESIGNATED;
             port->updtInfo = TRUE;
         
-        // RSTP_INFO_IS_MINE 表示端口当前持有的信息来自本桥自身/本桥其他端口推导
+        // RSTP_INFO_IS_MINE 表示端口当前持有的信息来自本桥自身推导
         // 因此此时 port->portPriority 保存的不是从 BPDU 里记录下来的对端宣告的优先级向量
         // 而是本桥根据当前选出来的 rootPriority/rootTimes，为该端口计算得到的 designatedPriority/designatedTimes
         // Mine 说明这个端口当前采用的是我方要在该网段上宣告的 designated 信息，那它的角色自然就是 Designated Port（该段上由我负责发通告的一侧）
@@ -1625,9 +1626,10 @@ void rstpPimFsm(RstpBridgePort *port) {
       * rcvdMsg:       是否收到过 BPDU 消息
       * rcvdInfoWhile: 接收信息的保鲜计时器，当它归零时，信息会被判定为 aged out
       * updtInfo:      端口信息是否需要用本桥计算出的 designated 信息进行更新，portPriority/portTimes 需要刷新为 designatedPriority/designatedTimes
-      * selected/reselect: 桥的端口角色选择流程用的握手标志；PIM 在很多入场动作里把 reselect=TRUE, selected=FALSE，强制外层重新跑一次角色选择树（roles tree）
+      * selected/reselect: 桥的端口角色选择流程用的握手标志；PIM 在很多入场动作里把 reselect=TRUE, selected=FALSE，强制外层 prs 状态机重新跑一次角色选择树，重新确定根，根端口以及各端口的角色
       */
-    // 只要端口不再可用，无论端口 infoIs 当前在哪个 PIM 状态，都立即强制切到 DISABLED
+    // 只要端口不再可用，无论端口 infoIs 当前在哪个 PIM 状态（只要不处于 DISABLED 状态），都立即将 infoIs 设置为 RSTP_INFO_IS_DISABLED
+    // 并且将 reselect=TRUE, selected=FALSE，让 PRS 状态机重新对端口角色进行选举
     if (!port->portEnabled && port->infoIs != RSTP_INFO_IS_DISABLED) {
         rstpPimChangeState(port, RSTP_PIM_STATE_DISABLED);
     } else {
@@ -1647,7 +1649,7 @@ void rstpPimFsm(RstpBridgePort *port) {
         case RSTP_PIM_STATE_AGED:
             // AGED 只是声明端口原先接收来的信息已失效，并不代表立刻就该用本桥信息覆盖并对外宣告
             // 因此它要等到 selected && updtInfo 成立后才进入 UPDATE，把端口信息切换为 MINE 并置 newInfo=TRUE
-            // 先让全桥的角色/根信息计算结果稳定，再在确实需要同步端口信息时（updtInfo 为 true 表示不一致） 才更新和触发发送，避免在角色未定时发出自相矛盾的 BPDU、减少无意义的覆盖与抖动，同时防止把最终应为 Alternate/Backup/Disabled 的端口误写成可宣告的 designated 信息
+            // 先让全桥的角色/根信息计算结果稳定，再在确实需要同步端口信息时（updtInfo 为 true 表示不一致）才更新和触发发送，避免在角色未定时发出自相矛盾的 BPDU、减少无意义的覆盖与抖动，同时防止把最终应为 Alternate/Backup/Disabled 的端口误写成可宣告的 designated 信息
             if (port->selected && port->updtInfo) {
                 rstpPimChangeState(port, RSTP_PIM_STATE_UPDATE);
             }
@@ -1663,8 +1665,8 @@ void rstpPimFsm(RstpBridgePort *port) {
             break;
 
         case RSTP_PIM_STATE_CURRENT:
-            // 本轮全桥的角色/优先级计算已经提交完成 并且 Cyclone 里注释是提示需要更新 portPriority 和 portTimes
-            // UPDATE 就是把端口信息更新为本桥计算出的 designated 信息
+            // 本轮全桥的角色/优先级计算已经提交完成 并且需要更新 portPriority 和 portTimes，UPDATE 就是把端口信息更新为本桥计算出的 designated 信息
+            // 第一步必须先检测 updtInfo，然后有必要的话及时更新 port 的 portPriority 和 portTimes，因为后续 rstpRcvInfo 函数需要根据 portPriority 和 portTimes 来判定类型
             if (port->selected && port->updtInfo) {
                 rstpPimChangeState(port, RSTP_PIM_STATE_UPDATE);
 
@@ -1778,7 +1780,6 @@ void rstpPimChangeState(RstpBridgePort *port, RstpPimState newState) {
 
     case RSTP_PIM_STATE_NOT_DESIGNATED:
         rstpRecordAgreement(port);
-        // 
         rstpSetTcFlags(port);
         port->rcvdMsg = FALSE;
         break;
@@ -2016,3 +2017,23 @@ DP 端口在收到对端发回的 Agreement 后，PIM 会在合适的分支里�
 最后是把事件扩散到全树并触发 fdbFlush，当其它端口因为 **`rstpSetTcPropTree()`** 被置了 **`tcProp=TRUE`** 后，在 TCM 的 ACTIVE 状态里会命中 **`tcProp && !operEdge`** 的条件并转到 PROPAGATING。进入 PROPAGATING 时，CycloneSTP 会再次 **`rstpNewTcWhile(port)`**，让该端口也进入 TC 窗口并且后续发出的 BPDU 也带 TC 位，同时把 **`fdbFlush=TRUE`** 并清掉 tcProp（避免重复传播）。这就是 tcProp 把事件扩散到全树以及 fdbFlush 刷新转发表的落地实现。
 
 虽然 **`rstpSetTcPropTree()`** 会把需要传播拓扑变化的标记（tcProp）置到本桥除本端口外的所有端口上，但在 Cyclone 的 TCM 状态机里，并不是所有端口都会真正参与传播。在 ACTIVE 状态下，TCM 会先做筛选：如果端口不是 RP/DP，或者该端口是边缘口（operEdge 为真），就会被切回 LEARNING，相当于被排除在 TC 传播之外；只有满足参与条件的端口，才会在检测到 **`tcProp && !operEdge`** 时进入 PROPAGATING 状态。即 **`tcPropTree`** 先把要传播 TC 的事件扩散到本桥所有端口；但只有非边缘并且角色为 DP/RP（并处在 ACTIVE/转发相关路径上）的端口会进入 PROPAGATING，从而启动自己的 tcWhile，最终让它们发出去的 BPDU 带 TC 位。
+
+### 5.PRS
+
+**`rstpUpdtRolesTree()`** 函数可以理解成：选出本桥的最佳根信息以及根端口、为每个端口生成应宣告的信息、给每个端口选角色并决定是否需要刷新发包。此函数每次被 PRS（Port Role Selection）在 **`ROLE_SELECTION`** 入状态动作调用时执行，目标是让本桥重新确定谁是根、我的根端口是谁、各端口应当扮演什么角色、以及哪些端口需要更新并尽快发出新的 BPDU。其具体工作步骤如下：
+
+第一步，即遍历本桥的所有端口（严格意义上来说是满足 **`infoIs == RSTP_INFO_IS_RECEIVED`** 的端口），最终确定出本桥的根以及根端口信息。
+
+第二步，是在本桥已确定当前 Root 信息与 Root Port 的前提下，为每个端口生成该端口的 Designated 信息集合，即 **`port->designatedPriority`** 与 **`port->designatedTimes`**，用于作为该端口对外发布 BPDU 时应携带的优先级向量与计时参数。
+
+第三步，它根据每个端口的 infoIs 以及优先级之间的比较结果，确定端口的角色（RP/DP/AP/BP）并保存到 selectedRole，并决定是否置位 updtInfo：
+- **`DISABLED`**：直接 **`selectedRole=DISABLED`**；
+- **`AGED`**：信息已经超时老化，端口重新作为 **`DESIGNATED`**，并强制 **`updtInfo=TRUE`**，表明需要刷新并宣告本端信息；
+- **`MINE`**：端口当前持有的是本桥生成的信息，仍然是 **`DESIGNATED`**；但如果发现端口现有的 **`portPriority/portTimes`** 与端口刚算出来的应该宣告出去的 **`designatedPriority/designatedTimes`** 不一致，就置 **`updtInfo=TRUE`**，表示本端口先前宣告的内容变了，要更新并发出去；
+- **`RECEIVED`**：
+  - 如果该端口就是前面选出来的 rootPort，则 **`selectedRole=ROOT`**；
+  - 否则拿本端应宣告的 designatedPriority 与对端带来的 portPriority 比较，若本端更优则 **`selectedRole=DESIGNATED`** 且 **`updtInfo=TRUE`**，这就是对端发来次优信息，本端口要更新并压回去的关键触发点；若本端不如对端，则进一步判断是 BACKUP 还是 ALTERNATE；
+
+>根据华为的官方文档，在处理次等 BPDU 报文时，当一个端口收到上游的指定桥发来的 RST BPDU 报文时，该端口会将自身存储的 RST BPDU 与收到的 RST BPDU 进行比较。**<font color="red">如果该端口存储的 RST BPDU 的优先级高于收到的 RST BPDU，那么该端口会直接丢弃收到的 RST BPDU，立即回应自身存储的 RST BPDU</font>**。当上游设备收到下游设备回应的 RST BPDU 后，上游设备会根据收到的 RST BPDU 报文中相应的字段立即更新自己存储的 RST BPDU。
+
+**`rstpUpdtRolesTree()`** 的职责仅限于完成端口角色选择并对需要刷新宣告信息的端口置位 updtInfo，其本身并不直接执行发送。实际的信息更新与发送触发由 PIM（Port Information Machine）完成：当端口满足 **`selected == TRUE`** 且 **`updtInfo == TRUE`** 时，PIM 进入 UPDATE 状态，在该状态的入动作中将端口当前信息 **`portPriority/portTimes`** 原子性更新为 **`designatedPriority/designatedTimes`**，清除 updtInfo，将 infoIs 置为 MINE，并置位 **`newInfo = TRUE`** 以指示存在待发送的新信息。随后，PTX（Port Transmit）状态机依据 newInfo 调度 BPDU 的发送。
