@@ -128,9 +128,11 @@ RSTP 的配置 BPDU 被称为 RST BPDU，其格式与 STP 的配置 BPDU 格式�
     <img src="rstp_static//6.png" width="450"/>
 </div>
 
+>在 RSTP 协议中，TCA 标志位不再被使用。
+
 **<font color="red">在 STP 的配置 BPDU 中，Flags 字段虽然定义了 8 位，但是只使用了最低位和最高位。在 RSTP 的 RST BPDU 中，其余的 6 位也被利用起来了，并在 RSTP 协议计算中发挥着重要的作用</font>**。RST BPDU 的格式如上图所示。
 
-STP 只使用了该字段的最高及最低比特位，在 RST BPDU 中这两个比特位的定义及作用不变。另外，Agreement（同意）及 Proposal（提议）比特位用于 RSTP 的 P/A（**`Proposal/Agreement`**）机制，该机制大大地提升了 RSTP 的收敛速度。Port Role（接口角色）比特位的长度为 2bit，它用于标识该 RST BPDU 发送接口的接口角色：
+STP 只使用了该字段的最高及最低比特位，在 RST BPDU 中这两个比特位的定义及作用不变。另外，Agreement（同意）及 Proposal（提议）比特位用于 RSTP 的 P/A（**`Proposal/Agreement`**）机制，该机制大大地提升了 RSTP 的收敛速度。其中位 1 就作用于 proposal 提议，**当端口是 `DP/Discarding` 或者 `DP/learning` 状态时置 1**。Port Role（接口角色）比特位的长度为 2bit，它用于标识该 RST BPDU 发送接口的接口角色：
 
 - **`01`**:表示根接口
 - **`10`**:表示替代接口
@@ -188,66 +190,9 @@ RSTP 在 BPDU 的处理上的另一点改进是对于次优（Inferior）BPDU �
 
 **<font color="red">如果接口收到一份 BPDU，而且该接口当前所保存的 BPDU 比接收的 BPDU 更优，那么后者对于前者而言，就是次优 BPDU</font>**。在 STP 中，当指定接口收到次优 BPDU 时，它将立即发送自己的 BPDU；而对于非指定接口，当其收到次优 BPDU 时，它将等待接口所保存的 BPDU 老化之后，再重新计算新的 BPDU，并将新的 BPDU 发送出去，这将导致非指定接口需要最长约 20s 的时间才能启动状态迁移。在 RSTP 中，无论接口的角色如何，只要接口收到次优 BPDU，便立即发送自己的 BPDU，这个变化使得 RSTP 的收敛更快。
 
-在 **`rstpUpdtRolesTree()`** 函数里，当端口的 **`infoIs==RECEIVED`** 时，并且该端口又不是 RP 时，Cyclone RSTP 协议实现中会先把如果我把自己当作该链路上的指定端口时，我应当宣称出来的那套优先级向量构造成 **`designatedPriority`**，同时该端口也已经保存了一份从对端 BPDU 记录下来的 **`portPriority`**。接下来 Cyclone 通过 **`rstpComparePriority(designatedPriority, portPriority)`** 对这两套优先级向量做严格比较。
-
-一旦 designatedPriority 更优，就会选择 **`selectedRole=DESIGNATED`**，并置 **`updtInfo=TRUE`**。随后进入 PIM，**`updtInfo=TRUE`** 条件会被消化为真正可发送的标志，当端口满足 **`selected && updtInfo`** 条件时，PIM 会转入 UPDATE 状态，并在入状态动作里完成一组关键赋值，用本端的 designatedPriority 覆盖 portPriority，用 designatedTimes 覆盖 portTimes，然后清掉 updtInfo、并把 **`newInfo=TRUE`** 置位。随后本桥就将本端口存储的更优的 BPDU 信息发送出去。Cyclone RSTP 协议的相关源代码如下所示：
-
-```c{.line-numbers}
-// rstpUpdtRolesTree 函数
-if(rstpComparePriority(&port->designatedPriority, &port->portPriority) > 0) {
-    port->selectedRole = STP_PORT_ROLE_DESIGNATED;
-    port->updtInfo = TRUE;
-}
-
-// rstpPimFsm 函数
-// 本轮全桥的角色/优先级计算已经提交完成 并且需要更新 portPriority 和 portTimes，UPDATE 就是把端口信息更新为本桥计算出的 designated 信息
-// 第一步必须先检测 updtInfo，然后有必要的话及时更新 port 的 portPriority 和 portTimes，因为后续 rstpRcvInfo 函数需要根据 portPriority 和 portTimes 来判定类型
-if (port->selected && port->updtInfo) {
-    rstpPimChangeState(port, RSTP_PIM_STATE_UPDATE);
-}
-
-// rstpPimChangeState 函数
-void rstpPimChangeState(RstpBridgePort *port, RstpPimState newState) {
-    case RSTP_PIM_STATE_UPDATE:
-        port->proposing = FALSE;
-        port->proposed = FALSE;
-        port->agreed = port->agreed && rstpBetterOrSameInfo(port, RSTP_INFO_IS_MINE);
-
-#if defined(RSTP_PIM_WORKAROUND_1)
-        //Errata
-        if (port->forward) {
-            port->agreed = port->sendRstp;
-        }
-#endif
-
-        port->synced = port->synced && port->agreed;
-        port->portPriority = port->designatedPriority;
-        port->portTimes = port->designatedTimes;
-        port->updtInfo = FALSE;
-        // 只有 updtInfo 为 true 时，才需要将 infoIs 设置为 RSTP_INFO_IS_MINE
-        // 因为这说明端口的 portPriority 是使用本桥的信息进行更新的，所以将 infoIs 设置为 RSTP_INFO_IS_MINE
-        port->infoIs = RSTP_INFO_IS_MINE;
-        port->newInfo = TRUE;
-        break;
-}
-
-// rstpTxRstp 函数
-void rstpTxRstp(RstpBridgePort *port) {
-    // ===== 6.填优先级向量（designatedPriority）：我准备在这个端口上宣告的根与路径信息 =====
-    // Root Identifier（Root Bridge ID = priority + MAC）
-    bpdu.rootId.priority = htons(port->designatedPriority.rootBridgeId.priority);
-    bpdu.rootId.addr = port->designatedPriority.rootBridgeId.addr;
-    // Root Path Cost：到根的累计代价
-    bpdu.rootPathCost = htonl(port->designatedPriority.rootPathCost);
-    // Bridge Identifier：Designated Bridge ID
-    bpdu.bridgeId.priority = htons(port->designatedPriority.designatedBridgeId.priority);
-    bpdu.bridgeId.addr = port->designatedPriority.designatedBridgeId.addr;
-    // Port Identifier：Designated Port ID
-    bpdu.portId = htons(port->designatedPriority.designatedPortId);
-}
-```
-
 ### 2.5 边缘接口
+
+#### 2.5.1 边缘接口简介
 
 我们已经知道，运行了 STP 的交换机，其接口在初始启动之后，首先会进入阻塞状态。如果该接口被选举为根接口或指定接口，那么它还需要经历侦听及学习状态，最终才能进入转发状态，也就是说，一个接口从初始启动之后到进入转发状态至少需要花费 约 30s 的时间。
 
@@ -258,6 +203,17 @@ void rstpTxRstp(RstpBridgePort *port) {
 </div>
 
 可以将交换机的接口配置为边缘接口（Edge Port）来解决上述问题。如上图所示，交换机 SW2 的 **`GE0/0/1`**、**`GE0/0/2`** 及 **`GE0/0/3`** 均可被配置为边缘接口。**<font color="red">边缘接口既不参与生成树计算，当边缘接口被激活之后，它可以立即切换到转发状态并开始收发业务流量，而不用经历转发延迟时间</font>**，因此工作效率大大提升了。
+
+#### 2.5.2 边缘接口特点
+
+802.1w 定义的边缘端口具备如下特性：
+
+- 边缘端口状态变化不会触发拓扑变化通知；
+- 边缘端口不参与 STP 计算，端口启动后可以直接进入转发状态，从而跳过丢弃（Discarding）和学习（Learning）状态；
+- 边缘端口会向外周期通告 BPDU，但若边缘端口接收到 BPDU，该端口会立即丧失边缘端口特性，切换回普通生成树端口并根据收到的 BPDU 重新计算端口角色；
+- P/A 协商过程中，同步（Sync）过程并不会阻塞边缘端口，同时 TC 通知 BPDU 也不清空边缘端口的 MAC 表项（TC BPDU 并不向边缘端口转发）；
+
+**（1）边缘端口启动后直接进入转发状态**
 
 在 Cyclone RSTP 的实现中，边缘接口之所以能够激活后立即进入转发，因为 PRT 状态机的 **`rstpPrtDesignatedPortFsm()`** 函数在推进 designated 端口角色时，把 operEdge 当作一种快速放行条件，从而绕过原本需要等待的定时器与握手约束。具体来说，当端口处于 designated 相关状态，准备进一步从同步/协商阶段推进到学习/转发阶段时，PRT 的判断条件为 **`(fdWhile == 0 || agreed || operEdge)`**。
 
@@ -289,6 +245,8 @@ else if ((port->fdWhile == 0 || port->agreed || port->operEdge) && (port->rrWhil
 [SW2-GigabitEthernet0/0/1]stp edged-port enable
 ```
 
+**（2）边缘接口收到 BPDU 后丧失边缘接口特性**
+
 值得注意的是，由于人为疏忽，边缘接口也可能会被误接交换设备，一旦交换设备连接到边缘接口，那么便引入了环路隐患。**<font color="red">因此如果边缘接口连接了交换设备并且收到了 BPDU，则该接口立即变成一个普通的生成树接口</font>**，在这个过程中，可能引发网络中的 RSTP 重计算，从而对网络造成影响。
 
 当端口收到一份合法 BPDU 后，协议栈 **`rstpPrxFsm()`** 函数会把 **`port->rcvdBpdu`** 置位，PRX 状态机在 **`DISCARD/RECEIVE`** 的条件判断里检测到 **`rcvdBpdu && portEnabled`** 就会进入 RECEIVE 状态。进入 RECEIVE 状态时，Cyclone 会执行一组收到 BPDU 后的标准动作，其中最关键的就是 **`port->operEdge = FALSE`**。同时还会清掉 rcvdBpdu、置 **`rcvdMsg = TRUE`** 并把 edgeDelayWhile 重新装载为 **`rstpMigrateTime()`**。这一步在语义上就等价于只要收到 BPDU，就不再把该端口当作边缘端口对待。相关源代码如下：
@@ -316,33 +274,182 @@ void rstpPrxChangeState(RstpBridgePort *port, RstpPrxState newState) {
 
 一个接口被配置为边缘接口后，该接口依然会周期性地发送 BPDU，然而正如上文所述，边缘接口通常用于连接终端设备，BPDU 对于这些设备而言其实是多余的，此时可以在接口的配置视图下增加 **`stp bpdu-filter enable`** 命令，这条命令用于激活该接口的 BPDU 过滤功能。在交换机的接口上激活 BPDU 过滤功能 后，该接口将不再发送 BPDU，而当其收到 BPDU 时，也会直接忽略。
 
-## 3.P/A 机制
+**（3）边缘端口状态变化不会触发拓扑变化通知**
 
-### 3.1 ieee-802.1d 规范介绍
+在 Cyclone RSTP 的 TCM（Topology Change Management）状态机中，边缘端口被显式从拓扑变更检测与传播链路中排除，这是通过关键状态转移的 guard 条件实现的。DETECTED（拓扑变更检测）的进入条件包含 **`!port->operEdge`**。因此即使端口当前处于转发相关状态（例如 **`forward==TRUE`**），只要该端口被判定为边缘端口，就不会进入 **`RSTP_TCM_STATE_DETECTED`** 状态，从而无法进入变更监测的 **`RSTP_TCM_STATE_ACTIVE`** 状态，也就无法检测到拓扑变化以及启动 TC 处理的状态迁移，从根源上避免在 edge 端口上启动拓扑变更流程。
 
-Port Role Transitions 状态机为了让一个 Designated Port（指定端口）从非转发快速进入 Forwarding，会用到 **`Proposal/Agreement`** 的消息交换，并依赖下面这些布尔变量：
+PROPAGATING（拓扑变更传播）的进入条件（在 **`rstpTcmFsm()`** 函数中）同样要求 **`tcProp && !port->operEdge`**。也就是说，只有在端口被置为需要传播拓扑变化（**`tcProp==TRUE`**）且端口非边缘的情况下，TCM 才会进入传播态并执行后续动作，如启动 tcWhile 计时器，当端口的 tcWhile 计时器不为 0 时会不断发出 TC 报文；以及设置 **`fdbFlush = True`**，调用 **`rstpRemoveFdbEntries()`** 函数清除转发表，这就是前面所说的 **<font color="red">TC 通知 BPDU 也不清空边缘端口的 MAC 表项</font>**。边缘端口即使被置位 **`tcProp`**，也会因为 **`!operEdge`** 不成立而不会进入传播路径。
 
-- **`proposing`**：当一个端口是指定端口但还没处于 Forwarding 时，它可以置位 proposing，并在发出的 RST BPDU 里把 Proposal 位带出去，相当于表达我想快速转发，你能不能配合？对上图中从 **`BRIDGE A -> BRIDGE B`** 的竖向下箭头 Proposal，上方标着 proposing；
-- **`proposed`**：当本端（BRIDGE B）收到一个 BPDU，里面声明对端这个口是 Designated role，并且 Proposal 位=1，就把本端对应端口的 proposed 置位，表示我收到了对端的提议。注意，如果当前还没准备好同意（agree 还没能置位），那么 proposed 会触发把本桥的其他端口都置 sync，也就是让全桥 B 先同步到安全状态。对应上图中在 BRIDGE B 顶部，靠近端口的虚线框里有 proposed；并且从那里指向 **`setSyncTree()`**，再分叉到 B 的其他端口；
-- **`sync`**：sync 是把端口拉回安全态的请求位。只要 sync=1，端口就会被驱动去 Discarding——除非它是 Edge Port，或者它已经是 synced=1（已经处在安全/已同步状态）。对应上图中 BRIDGE B 内部每个端口小状态图里都有 **`synced -> sync -> Discard -> Discarding`** 的路径。
-- **`synced`** ：synced 表示这个端口已经处在不会形成环路的安全状态。标准给的两个典型来源：端口已经在 Discarding 或这个端口已经拿到了 agreed。对应上图中看到每个端口里有一个 OR 汇合 Discarding 或 agreed 都能导向 synced。
+```c{.line-numbers}
+void rstpTcmFsm(RstpBridgePort *port) {
+
+    switch (port->tcmState) {
+    case RSTP_TCM_STATE_INACTIVE:
+    case RSTP_TCM_STATE_LEARNING:
+        // 如果端口角色是 Root/Designated，且端口允许转发 (forward=TRUE)，并且不是边缘端口 (operEdge=FALSE)，
+        // 说明一个树端口进入了可以转发的阶段——这在 RSTP 中被视为一次拓扑变化触发点，转到 DETECTED 去启动 tcWhile、触发传播等动作
+        // In RSTP, only non-edge ports that move to the forwarding state cause a topology change. This means that a loss of connectivity is not considered as a topology change any more, contrary to 802.1D (that is, a port that moves to blocking no longer generates a TC)
+        // 只有非边缘端口切换到转发状态时才被定义为拓扑变动，非边缘端口丢失连接不会触发拓扑变化通知
+        else if ((port->role == STP_PORT_ROLE_ROOT ||
+                    port->role == STP_PORT_ROLE_DESIGNATED) &&
+                   port->forward && !port->operEdge) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_DETECTED);
+        } 
+        break;
+
+    case RSTP_TCM_STATE_ACTIVE:
+        else if (port->tcProp && !port->operEdge) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_PROPAGATING);
+        } 
+        break;
+    }
+}
+
+void rstpTcmChangeState(RstpBridgePort *port, RstpTcmState newState) {
+    port->tcmState = newState;
+
+    switch (port->tcmState) {
+    case RSTP_TCM_STATE_DETECTED:
+        // 根据 ieee 802.1d-2004 规范，If the value of tcWhile is zero and sendRstp is true, this procedure sets the value of tcWhile to HelloTime plus one second and sets newInfo true.
+        rstpNewTcWhile(port);
+        rstpSetTcPropTree(port);
+        port->newInfo = TRUE;
+        break;
+    case RSTP_TCM_STATE_NOTIFIED_TC:
+        port->rcvdTcn = FALSE;
+        port->rcvdTc = FALSE;
+        if (port->role == STP_PORT_ROLE_DESIGNATED) {
+            port->tcAck = TRUE;
+        }
+        rstpSetTcPropTree(port);
+        break;
+    case RSTP_TCM_STATE_PROPAGATING:
+        rstpNewTcWhile(port);
+        port->fdbFlush = TRUE;
+        port->tcProp = FALSE;
+        break;
+    default:
+        break;
+    }
+
+    port->context->busy = TRUE;
+}
+```
+
+#### 2.5.3 边缘接口使用说明
+
+使用说明如下：
+
+- 华为交换机可在 STP 及 RSTP 模式下开启边缘端口，端口上输入命令：**`stp edged-port enable`**；
+- 边缘端口是为连接终端设备，如 PC、服务器、路由器、防火墙等设备使用。若连接交换设备，易于出现环路；
+- 边缘端口的频繁抖动对网络没有影响，不产生拓扑变化通知，同时交换机也不向边缘端口转发拓扑变化通知；
+- **<font color="red">边缘端口的角色为 DP，并保持转发状态</font>**；
+- 为避免边缘端口下连接交换设备或防止攻击者伪造 BPDU 报文导致边缘端口属性变成非边缘端口，可将边缘端口连同 BPDU 防护特性一起使用，使边缘端口收到 BPDU，端口会 shutdown，以保护边缘端口，同时边缘端口特性不变；
+
+SW1 和 SW2 为 RSTP 交换机。请简单分析边缘端口按照图 9-55 方式相连有什么问题？
 
 <div align="center">
-    <img src="rstp_static//1.png" width="550"/>
+    <img src="rstp_static//14.png" width="450"/>
 </div>
 
->这里解释一下第 2 个来源，这里最关键的点在于 agreed 并不是一个随便的标志位，它代表的是对端已经完成了必要的同步动作（例如把其余端口同步到安全态、满足 allSynced 等条件），并且通过 Agreement 明确授权本端端口可以无额外延迟进入转发。如果不把 agreed 视作 synced 的一种来源，就会出现逻辑上的反直觉：**<font color="red">端口刚刚通过 `Proposal/Agreement` 握手完成了我可以安全快速转发的证明，结果下一次 sync 触发的全桥同步又会把它强行拉回 Discarding，等于是把刚刚建立的安全确认与快速收敛成果全部推翻</font>**，不但浪费握手过程，还会让收敛退化回更慢、更保守的路径。
+上图（a）为边缘端口的 Port1 和 Port2 被用户通过网线互联后，由于端口启动之初没有收到任何 BPDU，所以两个端口均直接进入转发状态。所以初期会有短暂的环路发生，**<font color="red">但边缘端口若互相收到对方的 BPDU，则失去边缘端口的特性，变成普通端口，端口阻塞数据，并重新根据各自收到的 BPDU 计算端口角色</font>**。网络稳定后，端口 Port1 应该是 **`DP/Forwarding`**，而 Port2 是 **`BP/Discarding`**。
 
-- **`agree`**：当且仅当本桥除了收到 Proposal 的那个端口之外，其他所有端口都 synced=1（即 allSynced），本桥才会在该端口置位 agree，并发送带 Agreement 位的 RST BPDU 给对端。agree 第一次置位时会触发发送 Agreement，并把 proposed 清掉（表示这个提议已经处理完/进入下一阶段）。对应上图中 BRIDGE B 中间有 allSynced 指向 agree，并且从 **`BRIDGE B -> BRIDGE A`** 有竖向上箭头 Agreement。
-- **`agreed`**：当本端收到带 Agreement 位的 RST BPDU，且对端端口角色是 **`Root/Alternate/Backup`**，并且该 BPDU 的优先级不比本端更好（即不会因为更优 BPDU 导致角色又要重新选），就置位 agreed。
+上图（b）中，Port1 和 Port2 端口连接到一台交换机，如果交换机是普通交换机且无 STP，交换机则可透传 BPDU，Port1 和 Port2 互相收到对方的 BPDU，其效果等同于图（a）。
 
-任何一个指定端口一旦转换到 Discarding 状态，就会向其相邻网桥请求许可，以便随后能够转换到 Forwarding 状态。其结果是在当前活动拓扑中形成的一个切口（cut）（可以理解为转发路径被临时切断/阻塞的边界）会从根桥方向向网络外缘逐步传播，直到它在最终稳定的活动拓扑中到达其应处的位置，或一直传播到网络边缘为止。
+但若该交换机是华为交换机，华为交换机在端口上输入 **`STP disable`**，端口会过滤 STP 报文，SW2 交换机 Port1 和 Port2 端口互相收不到对方的 BPDU，所以 Port1 和 Port2 的端口角色和状态依然不变，都是转发状态。这时端口 **`Port1/Port2/Port3/Port4`** 都可转发数据，所以环路出现。
 
-把端口切到 Discarding 不会带来数据环路风险；但切到 Forwarding 必须与该端口所处局部区域内其它端口的角色/状态保持一致——这个区域的边界由非 Forwarding 的端口，以及连接到没有其他桥的 LAN 的端口共同限定。当一个端口因为生成树信息变化而被分配为 Root 或 Designated 时，桥只有在满足以下条件之一时，才知道它可以进入 Forwarding：
+上图（d）中，把华为交换机 SW3 接在边缘端口下面。边缘端口一旦收到 BPDU，端口阻塞数据，失去边缘端口特性，开始重新计算端口角色。如果 SW1 是根桥，则 Port1 和 Port2 是 **`DP/Forwarding`**，而 Port3 是 **`RP/Forwarding`**，Port4 是 **`AP/Discarding`**。整个过程无环路发生。
 
-- 已经过去了足够长的时间，使得新信息能传播到该区域内所有桥，并且任何矛盾信息也来得及返回/被收到；
-- 该端口现在是 Root Port，并且本桥上任何曾经是 Root Port 的端口现在都不是、且在生成树信息传播到网络其它桥之前也不会成为 Forwarding 状态；
-- 该端口是 Designated Port，它所连接的 LAN 上至多还有一台其它桥；且那台桥的端口状态要么与生成树信息一致、要么处于 Discarding；并且通过它们的 Forwarding 端口再连接出去的更远端桥，也同样满足“一致或 Discarding”；
-- 该端口是 Edge Port；
+在 Cyclone RSTP 里，SW3 之所以把 p3 选为 RP，SW3 的 p3 和 p4 都是从同一个上游桥 SW2 收到 BPDU。因此比较时 **`rootBridgeId`** 一样（都是 SW1），**`designatedBridgeId`** 也一样（都是 SW2），如果两条链路代价一致，则 rootPathCost 也会相等。这样一来，继续比较 BPDU 里的 **`designatedPortId`**，也就是 SW2 的 **`Port1/Port2`**。一般情况下 Port1 的 PortID 小于 Port2，所以对应 SW3 的 p3 拿到的向量更优，最终 p3 被选为 rootPort，角色自然就是 RP。
 
-### 3.2 
+另外在 SW3 这里，**<font color="blue">对端是更靠近根桥的 SW2，收到的向量通常更优，因此 SW3 的 p4 不可能赢过对端成为 Designated</font>**。因此 SW3 的 p4 端口就会被归类为 Alternate Port（AP），并保持在丢弃（Discarding）以提供备份路径。
+
+## 3.RSTP 链路类型
+
+**`802.1d`** 对连接交换机的链路或网段是没有要求的, 任两台交换机间网段 (Segment) 上可以接有多台交换机或使用共享链路 (Half-Duplex) 互连。而 **`802.1w`** 则对链路有严格的要求, 不同链路类型可影响到收敛速度及工作机制。
+
+- Point-to-Point 链路类型：交换机间 Full Duplex 链路。
+- 共享链路：交换机间半双工链路互联，可以连接 Hub 或其他 Half Duplex 的链路。
+
+RSTP 很多快速收敛的机制都一定要工作在 P2P 全双工的场景下，如果不是点到点链路类型，则 RSTP 使用类似 **`802.1d`** 的慢收敛机制（即基于 Timer 的被动收敛）。**<font color="red">在下图中，如果端口都是全双工状态，则 SW1 和 SW2 都认为互联的链路类型是 P2P</font>**。华为设备默认自动检测端口类型，可使用命令 **`stp point-to-point {auto | force-false | force-true}`** 去强制端口类型。Auto 代表自动检测，是端口默认值。
+
+<div align="center">
+    <img src="rstp_static//10.png" width="600"/>
+</div>
+
+- 手工设置端口类型优于端口检测的结果；
+- 处于 DP/discarding 状态的端口能否快速进入转发状态，依赖于端口是否是 P2P（点对点）全双工；
+
+下面解释一下，在 Cyclone RSTP 中，DP 端口处于 **`Discarding/Learning`** 的端口会进入 **`DESIGNATED_PROPOSE`**，把 **`proposing=TRUE`** 并在 TxRstp 里置 **`Proposal(P)`** 位。DP 端口要想快速从 Discarding 进入 **`Learning/Forwarding`**，依赖 **`agreed==TRUE`** 这个条件满足，否则就只能等待计时器 fdWhile 等于 0。而 agreed 只能在 **`rstpRecordAgreement()`** 中满足 **`rstpVersion && operPointToPointMac && 收到 Agreement(A)`** 位时置位，所以是否点对点全双工就成了能否快速转发的关键门槛。
+
+```c{.line-numbers}
+void rstpRecordAgreement(RstpBridgePort *port) {
+    const RstpBpdu *bpdu;
+
+    // Point to the received BPDU
+    bpdu = &port->context->bpdu;
+
+    // If rstpVersion is TRUE, operPointToPointMAC is TRUE, and the received Configuration Message has the Agreement flag set, the agreed flag is set
+    // and the proposing flag is cleared. Otherwise, the agreed flag is cleared
+    // 只有当运行在 RSTP 版本，且端口被判定为点到点链路，且收到的 BPDU Agreement 位=1 时，才把 port->agreed 置 TRUE，并清掉 port->proposing
+    if (rstpVersion(port->context) && port->operPointToPointMac && (bpdu->flags & RSTP_BPDU_FLAG_AGREEMENT) != 0) {
+        port->agreed = TRUE;
+        port->proposing = FALSE;
+    } else {
+        port->agreed = FALSE;
+    }
+}
+```
+
+- AP 端口成为 RP 端口，不依赖端口是否是 Point-to-Point 全双工。
+- 如果当前端口工作在全双工模式，则当前端口所连的链路是点到点链路，可以选择参数 **`force-true`**。
+- 如果当前端口工作在半双工模式，可通过执行命令 **`stp point-to-point force-true`** 强制链路类型为点到点链路，实现快速收敛。
+
+## 4.拓扑变化通知机制
+
+在 802.1w 协议规范中，定义 TC（Topology Change） 具备如下特性。
+
+**（1）触发条件**
+
+**<font color="red">只有非边缘端口切换到转发状态时才被定义为拓扑变动，非边缘端口丢失连接不会触发拓扑变化通知</font>**。
+
+在 Cyclone 的 **`rstpTcmFsm()`** 中，拓扑变动（TC）的触发点为：当状态机处于 LEARNING 时，端口角色必须是 Root 或 Designated，也就是这类端口会对树的连通性产生实质影响，同时 **`port->forward`** 必须为真，表示端口即将进入转发，并且端口不能是边缘端口 **`!operEdge`**。
+
+一旦满足这三个条件，TCM 立即切到 **`RSTP_TCM_STATE_DETECTED`**，并在该状态的入态动作里执行：计算并启动/刷新 tcWhile，调用 **`rstpSetTcPropTree()`** 标记本桥其它端口的 tcProp 属性为 True，后续其他被标记的端口 **`port->tcProp && !port->operEdge`** 条件判断通过进入 **`RSTP_TCM_STATE_PROPAGATING`** 状态继续扩散 TC BPDU 报文。同时置 newInfo=TRUE 促使尽快发出携带 TC 标志的 BPDU，把变化快速扩散出去。
+
+```c{.line-numbers}
+void rstpTcmFsm(RstpBridgePort *port) {
+    switch (port->tcmState) {
+    case RSTP_TCM_STATE_LEARNING:
+        // 如果端口角色是 Root/Designated，且端口允许转发 (forward=TRUE)，并且不是边缘端口 (operEdge=FALSE)，
+        // 说明一个树端口进入了可以转发的阶段——这在 RSTP 中被视为一次拓扑变化触发点，转到 DETECTED 去启动 tcWhile、触发传播等动作
+        // In RSTP, only non-edge ports that move to the forwarding state cause a topology change. This means that a loss of connectivity is not considered as a topology change any more, contrary to 802.1D (that is, a port that moves to blocking no longer generates a TC)
+        // 只有非边缘端口切换到转发状态时才被定义为拓扑变动，非边缘端口丢失连接不会触发拓扑变化通知
+        else if ((port->role == STP_PORT_ROLE_ROOT || port->role == STP_PORT_ROLE_DESIGNATED) && port->forward && !port->operEdge) {
+            rstpTcmChangeState(port, RSTP_TCM_STATE_DETECTED);
+        } 
+        break;
+    }
+}
+```
+
+**（2）拓扑变化交换机，产生通知**
+
+- TC 置位的 BPDU 向所有处于转发状态的非边缘的 DP 和 RP 端口去扩散。
+- 为转发端口开启 TC While 计时器，时长是 2 个 Hello 间隔。
+- 清空所有接口 MAC 地址关联表（边缘端口除外）。
+
+一旦检测到拓扑发生变化，将进行如下处理：
+
+- 为本交换设备的所有非边缘指定端口启动一个 TC While Timer，该计时器值是 Hello Time 的两倍；
+- 在这个时间内，清空状态发生变化的端口上学习到的 MAC 地址；
+- 同时，由这些端口向外发送 RST BPDU，其中 TC 置位；
+- 一旦 TC While Timer 超时，则停止发送 RST BPDU；
+
+**<font color="red">802.1w 拓扑变化通知机制以拓扑变化点为源，直接向周边链路扩散 TC 置位 BPDU</font>**，不需要 TCN 报文来通知根桥，这种机制相较 802.1d 更直接、更快速、效率更高。如此，网络中就会产生 RST BPDU 的泛洪。如下图所示。
+
+<div align="center">
+    <img src="rstp_static//15.png" width="450"/>
+</div>
+
+802.1w 这种 TC 机制会从故障点在一个很短的时间内刷新整个网络的转发表，清除 MAC 及快速地通知，可加速清除网络中错误 MAC 的机制。消息快速地泛洪给整个网络，此时的 TC 传播为一步完成。事实上，拓扑变动的发起者会在整个网络中泛洪该信息，而不是像 802.1d 只有根网桥可以进行 TC 信息泛洪。这种机制会比 802.1d 更加快速。
