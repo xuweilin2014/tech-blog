@@ -148,7 +148,7 @@ void rstpPimChangeState(RstpBridgePort *port, RstpPimState newState) {
 
 在 **`rstpUpdtRolesTree()`** 函数里，当端口的 **`infoIs==RECEIVED`** 时，并且该端口又不是 RP 时，Cyclone RSTP 协议实现中会先把如果我把自己当作该链路上的指定端口时，我应当宣称出来的那套优先级向量构造成 **`designatedPriority`**，同时该端口也已经保存了一份从对端 BPDU 记录下来的 **`portPriority`**。接下来 Cyclone 通过 **`rstpComparePriority(designatedPriority, portPriority)`** 对这两套优先级向量做严格比较。
 
-一旦 designatedPriority 更优，就会选择 **`selectedRole=DESIGNATED`**（该端口变为 DP 端口），并置 **`updtInfo=TRUE`**。随后进入 PIM，**`updtInfo=TRUE`** 条件会被消化为真正可发送的标志，当端口满足 **`selected && updtInfo`** 条件时，PIM 会转入 UPDATE 状态，并在入状态动作里完成一组关键赋值，用本端的 designatedPriority 覆盖 portPriority，用 designatedTimes 覆盖 portTimes，然后清掉 updtInfo、并把 **`newInfo=TRUE`** 置位。随后本桥就将本端口存储的更优的 BPDU 信息发送出去。Cyclone RSTP 协议的相关源代码如下所示：
+**<font color="red">一旦 designatedPriority 更优，就会选择 **`selectedRole=DESIGNATED`**（该端口变为 DP 端口），并置 **`updtInfo=TRUE`**</font>**。随后进入 PIM，**`updtInfo=TRUE`** 条件会被消化为真正可发送的标志，当端口满足 **`selected && updtInfo`** 条件时，PIM 会转入 UPDATE 状态，并在入状态动作里完成一组关键赋值，用本端的 designatedPriority 覆盖 portPriority，用 designatedTimes 覆盖 portTimes，然后清掉 **`updtInfo`** 标志位、并把 **`newInfo=TRUE`** 置位。随后本桥就将本端口存储的更优的 BPDU 信息发送出去。Cyclone RSTP 协议的相关源代码如下所示：
 
 ```c{.line-numbers}
 // rstpUpdtRolesTree 函数
@@ -158,7 +158,7 @@ if(rstpComparePriority(&port->designatedPriority, &port->portPriority) > 0) {
 }
 
 // rstpPimFsm 函数
-// 本轮全桥的角色/优先级计算已经提交完成 并且需要更新 portPriority 和 portTimes，UPDATE 就是把端口信息更新为本桥计算出的 designated 信息
+// 本轮全桥的角色/优先级计算已经提交完成，并且需要更新 portPriority 和 portTimes，UPDATE 就是把端口信息更新为本桥计算出的 designated 信息
 // 第一步必须先检测 updtInfo，然后有必要的话及时更新 port 的 portPriority 和 portTimes，因为后续 rstpRcvInfo 函数需要根据 portPriority 和 portTimes 来判定类型
 if (port->selected && port->updtInfo) {
     rstpPimChangeState(port, RSTP_PIM_STATE_UPDATE);

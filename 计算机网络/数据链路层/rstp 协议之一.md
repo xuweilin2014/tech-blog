@@ -20,7 +20,7 @@ RSTP 在 STP 的基础上，增加了两种接口角色，它们是替代（Alte
     <img src="rstp_static//2.png" width="350"/>
 </div>
 
->AP 可以理解为端口收到对方更优质的 BPDU，但是本端口不能成为 RP，本端口就是 AP。这条端口所在的链路上，对端给出的 BPDU 是更优，说明在这条链路/这个网段上，对端是 Designated（指定端口那一侧），这端不是 Designated。但在这台桥上做 Root Port 选择时，还有另一条端口提供了更好的到 Root 的路径，所以这条端口不会被选成 Root Port（RP），就变成 Alternate（备选的根端口），通常处于 Discarding（阻塞）状态，随时待命。
+>**<font color="red">AP 可以理解为端口收到对方更优质的 BPDU，但是本端口不能成为 RP，本端口就是 AP</font>**。这条端口所在的链路上，对端给出的 BPDU 是更优，说明在这条链路/这个网段上，对端是 Designated（指定端口那一侧），这端不是 Designated。但在这台桥上做 Root Port 选择时，还有另一条端口提供了更好的到 Root 的路径，所以这条端口不会被选成 Root Port（RP），就变成 Alternate（备选的根端口），通常处于 Discarding（阻塞）状态，随时待命。
 
 此时在 SW3 上执行 **`display stp brief`** 命令能看到如下输出：
 
