@@ -380,6 +380,57 @@ Port Role Transitions 状态机为了让一个 Designated Port（指定端口）
 - 该端口是 Designated Port，它所连接的 LAN 上至多还有一台其它桥；且那台桥的端口状态要么与生成树信息一致、要么处于 Discarding；并且通过它们的 Forwarding 端口再连接出去的更远端桥，也同样满足一致或 Discarding；
 - **该端口是 Edge Port**；
 
+接下来从 Cyclone RSTP 的实现细节来看为什么说：synced 的两个典型来源，端口已经在 Discarding 或这个端口已经拿到了 agreed。首先当端口收到对端的 BPDU，且其中 Agreement 位被置位，Cyclone 会在 **`rstpRecordAgreement()`** 函数里把 **`port->agreed`** 置为 TRUE，同时清除 **`port->proposing`**。
+
+```c{.line-numbers}
+void rstpRecordAgreement(RstpBridgePort *port) {
+    const RstpBpdu *bpdu;
+
+    // Point to the received BPDU
+    bpdu = &port->context->bpdu;
+
+    // If rstpVersion is TRUE, operPointToPointMAC is TRUE, and the received Configuration Message has the Agreement flag set, the agreed flag is set
+    // and the proposing flag is cleared. Otherwise, the agreed flag is cleared
+    // 只有当运行在 RSTP 版本，且端口被判定为点到点链路，且收到的 BPDU Agreement 位=1 时，才把 port->agreed 置 TRUE，并清掉 port->proposing
+    if (rstpVersion(port->context) && port->operPointToPointMac && (bpdu->flags & RSTP_BPDU_FLAG_AGREEMENT) != 0) {
+        port->agreed = TRUE;
+        port->proposing = FALSE;
+    } else {
+        port->agreed = FALSE;
+    }
+}
+```
+
+接下来，当状态机处于 **`DESIGNATED_PORT`** 状态时，会判断一个 OR 组合的触发条件，其中明确包含 **`(port->agreed && !port->synced)`** 这一项，一旦成立，就会触发状态机进入 **`DESIGNATED_SYNCED`** 处理流程。同一个 OR 分支另外一个触发条件 **`(!port->learning && !port->forwarding && !port->synced)`** 对应端口已经处于 Discarding 的情况。一旦从 **`DESIGNATED_PORT`** 跳到 **`DESIGNATED_SYNCED`**，RSTP 会将 **`port->synced`** 设置为 TRUE，表示该端口已经同步。
+
+```c{.line-numbers}
+// PRT（Port Role Transition） 状态机 - Designated Port 状态处理函数
+void rstpPrtDesignatedPortFsm(RstpBridgePort *port) {
+    else if ((!port->learning && !port->forwarding && !port->synced) || (port->agreed && !port->synced) ||
+             (port->operEdge && !port->synced) ||
+             (port->sync && port->synced)) {
+        // Switch to DESIGNATED_SYNCED state
+        rstpPrtDesignatedPortChangeState(port, RSTP_PRT_STATE_DESIGNATED_SYNCED);
+    }
+}
+
+void rstpPrtDesignatedPortChangeState(RstpBridgePort *port, RstpPrtState newState) {
+    port->prtState = newState;
+    // 进入某个状态时，需要执行该状态定义的入口动作（entry actions），并且只执行一次。
+    switch (port->prtState)
+    {
+        case RSTP_PRT_STATE_DESIGNATED_SYNCED:
+            // DESIGNATED_SYNCED：
+            // 标记本端口达到"已同步/安全"的语义：
+            // synced=TRUE，满足同步条件，并且将 sync 设置为 FALSE，清掉同步请求，避免反复被拉回 discard
+            port->rrWhile = 0;
+            port->synced = TRUE;
+            port->sync = FALSE;
+            break;
+    }
+}
+```
+
 ### 6.2 P/A 机制示例
 
 如下图所示，网络管理员在 SW1 与 SW2 之间新增了一条链路，由于 SW1 是此时网络中桥优先级最高的交换机，因此它将成为该网络的根桥，它的 **`GE0/0/1`** 接口将成为指定接口，而 SW2 的 **`GE0/0/2`** 接口将成为根接口。
