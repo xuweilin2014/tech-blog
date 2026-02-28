@@ -205,7 +205,7 @@ void rstpTxRstp(RstpBridgePort *port) {
 }
 ```
 
-SW3 到根交换机 SW1 有两条路径，**`SW1-SW3`** 为最优路径，转发状态。**`SW1-SW2-SW3`** 为次优路径，阻塞端口。当 **`SW1-SW2`** 间链路故障时，SW2 交换机立即产生自己的 BPDU（次优 BPDU）给 SW3，SW3 会立即开始计算端口角色。下图中，收到次优 BPDU 后，无需等待任何超时，**<font color="red">SW3 的 AP 端口在收到 SW2 发送的次优 BPDU 之后会成为 DP 端口并且会发送端口自身的更优 BPDU 报文</font>**。经过此次互发报文，SW3 的 Port3 保持为 DP 端口，SW2 的 Port3 变为 RP 端口，其和 SW2 的 DP 端口同时为 Discarding 状态，并开始 P/A 协商，能够快速收敛。
+SW3 到根交换机 SW1 有两条路径，**`SW1-SW3`** 为最优路径，转发状态。**`SW1-SW2-SW3`** 为次优路径，阻塞端口。当 **`SW1-SW2`** 间链路故障时，SW2 交换机立即产生自己的 BPDU（次优 BPDU）给 SW3，SW3 会立即开始计算端口角色。下图中，收到次优 BPDU 后，无需等待任何超时，**<font color="red">SW3 的 AP 端口在收到 SW2 发送的次优 Proposal BPDU 之后会成为 DP 端口并且会发送端口自身的更优 Proposal BPDU 报文</font>**。经过此次互发报文以及 P/A 协商，SW3 的 Port3 保持为 DP 端口，SW2 的 Port3 变为 RP 端口，并均进入转发状态，因此能够快速收敛。
 
 <div align="center">
     <img src="rstp_static//12.png" width="450"/>
