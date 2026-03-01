@@ -247,7 +247,7 @@ SW2 的 **`G0/0/1`** 端口收到 SW1 发送的 Proposal 消息后，**<font col
 
 当 SW2 的 **`G0/0/1`** 端口重新启动后，SW2 的 **`G0/0/1`** 端口在收到 SW1 发送的 proposal 报文之后进入 sync 同步状态，SW2 的 **`G0/0/2`** 端口因此由 **`RP/Forwarding`** 状态变为 **`DP/Discarding`** 状态，并因此触发发送 proposal 的消息给 SW3。SW3 的 **`G0/0/1`** 端口恢复为 AP 状态，此时 SW2 向其不断发送 Proposal 消息，但是由于 SW3 的端口状态为 AP，因此 SW3 会忽略 SW2 发送的 Proposal 消息，不会向 SW2 发送 Agreement 消息。
 
-因此 SW2 的 **`G0/0/2`** 端口为 DP 端口，状态首先为 Discarding，经过 15 秒之后进入 Learning 状态，再经过 15 秒之后进入 Forwarding 状态。SW3 的 **`G0/0/1`** 端口保持为 AP 端口，状态保持为 Discarding。
+因此 SW2 的 **`G0/0/2`** 端口为 DP 端口，状态首先为 Discarding，经过 15 秒之后进入 Learning 状态，再经过 15 秒之后进入 Forwarding 状态。SW3 的 **`G0/0/1`** 端口变为 AP 端口（变为 AP 端口是因为进行了 BPDU 优先级比较之后，SW3 的 **`G0/0/1`** 端口无法成为 RP 端口，同时 SW3 的优先级低于 SW2 的优先级，因此也无法成为 DP 端口，故 SW3 的 **`G0/0/1`** 端口变为 AP 端口），状态保持为 Discarding。
 
 SW2 的 **`G0/0/2`** 端口抓包结果如下所示，SW2 的 **`G0/0/2`** 端口在第 44-60 秒的时候处于 DP/Discarding 状态，在第 60 秒的时候进入 DP/Learning 状态，在第 76 秒的时候进入 DP/Forwarding 状态。
 

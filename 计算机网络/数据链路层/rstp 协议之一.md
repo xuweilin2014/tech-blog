@@ -453,3 +453,10 @@ void rstpTcmFsm(RstpBridgePort *port) {
 </div>
 
 802.1w 这种 TC 机制会从故障点在一个很短的时间内刷新整个网络的转发表，清除 MAC 及快速地通知，可加速清除网络中错误 MAC 的机制。消息快速地泛洪给整个网络，此时的 TC 传播为一步完成。事实上，拓扑变动的发起者会在整个网络中泛洪该信息，而不是像 802.1d 只有根网桥可以进行 TC 信息泛洪。这种机制会比 802.1d 更加快速。
+
+总结来说：When a bridge receives a BPDU with the TC bit set from a neighbor, these occur:
+
+- It clears the MAC addresses learned on all its ports, except the one that receives the topology change.
+- **<font color="red">It starts the TC While timer and sends BPDUs with the TC bit set on all its designated ports and root port</font>** (RSTP no longer uses the specific TCN BPDU, unless a legacy bridge needs notification).
+
+This way, the TC floods very quickly across the whole network. The TC propagation is now a one-step process. In fact, the initiator of the topology change floods this information throughout the network, as opposed to 802.1D where only the root bridge did. This mechanism is much faster than the 802.1D equivalent.

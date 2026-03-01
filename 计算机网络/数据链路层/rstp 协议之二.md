@@ -574,3 +574,32 @@ void rstpPrtRootPortChangeState(RstpBridgePort *port, RstpPrtState newState) {
 - **<font color="blue">P/A 机制是当上游是 DP 端口，下游是 RP/AP 端口时，才快速协商进入转发状态</font>**；
 - P/A 机制中，Proposal BPDU 是 DP 发送给对端的 BPDU，Agreement BPDU 是下游交换机把其 RP 端口收到的 BPDU 经计算后向上游回复。其中，Flag 置位如下：RP 角色，Forwarding 状态，Agreement 置位；
 - **<font color="red">RSTP 网络的 P/A 协商行为是渐进性的，逐段由根桥向网络边缘扩散</font>**。下游交换机在收到 Proposal 后，回应 Agreement，完成 P/A 协商后，其他 DP/Discarding 端口再继续开始 P/A 协商，直至到达网络边缘；
+
+## 7.总结
+
+### 7.1 RSTP 协议的状态变少
+
+端口状态从 802.1D 的 5 个收敛为 3 个：**`Discarding/Learning/Forwarding`**（原来的 **`Disabled`**、**`Blocking`**、**`Listening`** 都归并到 **`Discarding`**）。并且端口角色在 Root/Designated 之外，引入 Alternate/Backup 端口角色。
+
+### 7.2 RSTP 协议的链路类型
+
+RSTP 的快速收敛主要依赖两类端口/链路变量：Edge Port 和 Link Type。
+
+- Point-to-Point 链路：通常是全双工，RSTP 才能在其上做真正的快速协商后转发，并且只要当链路被判定为 Point-to-Point 时，发送的 proposal BPDU 中的 Agreement 标志位就会被置为 1；
+- Shared 链路：通常是半双工/Hub 场景，无法做有效的点到点协商，往往会退化到传统 802.1D 的慢收敛；
+- Edge Port（连接终端）：天然认为不会形成二层环路，允许直接进入转发状态；
+
+### 7.3 P/A 机制
+
+RSTP 在 BPDU 的 flag 字节里扩展了位，用于编码端口角色/状态以及支持 Proposal/Agreement 协商。
+
+- P=1：Proposal（提出快速转发请求），只有当指定端口（Designated）处于 **`Discarding/Learning`** 状态时，才会在发送的 BPDU 里把 Proposal 位 P 置 1，表示建议这条链路快速进入转发；
+- A=1：Agreement（同意快速转发），对端在完成同步（sync）后，会回复 Agreement 位（A=1）的 BPDU 给对端，表示我已确保不会形成环路，同意你快速转发。所谓同步就是将所有的 DP/RP 端口置为 **`DP/Discarding`**，直到它们都 synced=1 了才认为同步完成；
+
+### 7.4 快速切换的 3 类典型场景
+
+- 接终端：Edge 端口秒切换 Forwarding，连接终端的端口可直接转发，跳过传统 Discarding/Learning 等，并且 edge 端口链路抖动通常不触发拓扑变化通知；
+- 直连交换机：P2P 链路以及 P/A 协商，实现快速进入转发。在 P2P 链路上，**`Proposal/Agreement`** 的握手会一路向网络边缘传播；
+>非直连/共享段/或对端不支持 RSTP：退化为传统慢收敛（约 30s），同时若指定端口发出 Proposal 后收不到 Agreement（例如对端不为 RP，为 AP/BP），该端口也会回退到 802.1D 的 **`Discarding->Learning->Forwarding`**，等默认 30s 后才转发；
+- 端口快速切换:。如果 RP 端口路径丢失，交换机可以从多个替代端口中，把最好的替代端口（AP）立即切换为 RP 端口，并且状态也同时进入转发状态，从而提高网络收敛速度；
+>由于 RP/AP 端口的状态切换不依赖于 P/A 协商，因此在交换机间链路失效时，RP/AP 端口可以直接切换到 Forwarding 状态，而不会被拉回 Discarding，从而实现快速收敛，并且不会影响交换机上其他端口的转发状态。
