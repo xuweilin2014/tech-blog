@@ -451,3 +451,63 @@ stp region-configuration
  active region-configuration
 quit
 ```
+
+### 4.3 实验结果
+
+REGION1 中 IST 实例、MST2、MST4 实例中各个接口的状态如下所示，REGION2 和 REGION3 中 IST 实例、MST2、MST3/MST4 实例中各接口的状态类似。
+```java{.line-numbers}
+<SW1>display stp brief 
+ MSTID  Port                        Role  STP State     Protection
+   0    GigabitEthernet0/0/1        DESI  FORWARDING      NONE
+   0    GigabitEthernet0/0/2        DESI  FORWARDING      NONE
+   2    GigabitEthernet0/0/1        ROOT  FORWARDING      NONE
+   2    GigabitEthernet0/0/2        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/1        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/2        ROOT  FORWARDING      NONE
+<SW2>display stp brief 
+ MSTID  Port                        Role  STP State     Protection
+   0    GigabitEthernet0/0/1        ROOT  FORWARDING      NONE
+   0    GigabitEthernet0/0/2        DESI  FORWARDING      NONE
+   0    GigabitEthernet0/0/3        DESI  FORWARDING      NONE
+   0    GigabitEthernet0/0/4        DESI  FORWARDING      NONE
+   2    GigabitEthernet0/0/1        DESI  FORWARDING      NONE
+   2    GigabitEthernet0/0/2        DESI  FORWARDING      NONE
+   2    GigabitEthernet0/0/3        DESI  FORWARDING      NONE
+   2    GigabitEthernet0/0/4        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/1        ALTE  DISCARDING      NONE
+   4    GigabitEthernet0/0/2        ROOT  FORWARDING      NONE
+   4    GigabitEthernet0/0/3        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/4        DESI  FORWARDING      NONE
+<SW3>display stp brief 
+ MSTID  Port                        Role  STP State     Protection
+   0    GigabitEthernet0/0/1        ROOT  FORWARDING      NONE
+   0    GigabitEthernet0/0/2        ALTE  DISCARDING      NONE
+   0    GigabitEthernet0/0/3        DESI  FORWARDING      NONE
+   0    GigabitEthernet0/0/4        DESI  FORWARDING      NONE
+   2    GigabitEthernet0/0/1        ALTE  DISCARDING      NONE
+   2    GigabitEthernet0/0/2        ROOT  FORWARDING      NONE
+   2    GigabitEthernet0/0/3        DESI  FORWARDING      NONE
+   2    GigabitEthernet0/0/4        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/1        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/2        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/3        DESI  FORWARDING      NONE
+   4    GigabitEthernet0/0/4        DESI  FORWARDING      NONE
+```
+
+REGION1 中的 IST 实例拓扑及各接口的状态如下所示：
+
+<div align="center">
+    <img src="mstp_static//24.png" width="450"/>
+</div>
+
+REGION1 中的 MST2 实例拓扑及各接口的状态如下所示：
+
+<div align="center">
+    <img src="mstp_static//25.png" width="450"/>
+</div>
+
+REGION1 中的 MST4 实例拓扑及各接口的状态如下所示：
+
+<div align="center">
+    <img src="mstp_static//26.png" width="450"/>
+</div>
