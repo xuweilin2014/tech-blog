@@ -189,7 +189,7 @@ R1 的全局路由表和 OSPF 路由表中均没有默认路由。
 R4 LSDB 如下所示：
 
 <div align="center">
-    <img src="ospf_static/13_r2_lsdb.png" width="480" height="270"/>
+    <img src="ospf_static/13_r4_lsdb.png" width="480" height="270"/>
 </div>
 
 R2 LSDB 如下所示：
