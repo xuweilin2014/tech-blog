@@ -83,6 +83,7 @@ OSPF 邻居的建立过程：
 场景：A—B 两台路由器，初始化邻居关系建立过程，A 接收 B 的 Hello 报文过程中，状态变化过程如下。
 
 <div align="center">
+    <div align="center" style="color: #F14; font-size:13px; font-weight:bold">图 2 OSPF 邻居关系建立过程</div>
     <img src="ospf_static//111.png" width="450"/>
 </div>
 
@@ -259,6 +260,17 @@ RT1 -> RT2 : D-D (Seq=y+3, M=0, MS=0, last)
 
 **根据上述的讨论可知 Exchange 过程中，DD 交互过程是可靠的。Master 发送 **`seq=y+n`** 的报文，Slave 回应 **`seq=y+n`** 的报文**，Master 和 Slave 的 DD 报文中 M 都不置位，Exchange 过程才结束。
 
+```c{.line-numbers}
+            Loading    ------------------------>
+                                LS Request                   Full
+                       <------------------------
+                                LS Update
+                       ------------------------>
+                                LS Request
+            Full       <------------------------
+                                LS Update
+```
+
 #### 4.3 加载状态（Loading）
 
 在这一状态下，**<font color="red">本地路由器将会向它的邻居路由器发送链路状态请求数据包 LSReq，以请求本地 LSDB 中没有的 LSA</font>**。收到 LSReq 的报文，路由器会用包含完整的被请求的 LSA 的 LSU 做回应。请求方收到 LSU 后，如果无误，则 LSAck 确认该 LSU。一份 LSAck 可同时为多份 LSUpdate 做确认。
@@ -266,3 +278,99 @@ RT1 -> RT2 : D-D (Seq=y+3, M=0, MS=0, last)
 #### 4.4 完整状态（Full）
 
 在 FULL 状态下，邻居路由器之间已完成同步过程，建立起完全邻接关系。
+
+### 5.影响邻居/邻接关系建立的问题
+
+以下几种原因可能影响到邻居关系的建立，也可能影响到邻接关系的建立。下面主要介绍主 IP 网络和掩码的影响。
+
+Hello 报文中，携带有接口主 IP 网络的掩码，Hello 报文中通过掩码和报文的源 IP 地址，可判定邻居双方是否在同一个主 IP 网络。**在 OSPF 里，接收方会用收到的 Hello 报文中的 Network Mask 字段，再结合这个 Hello 报文的源 IP 地址（接口的主 IP，相对于从 IP 来说），通过计算，去判断对端接口所在的主 IP 网络是否与自己一致**。
+
+主 IP 网络是接口配置的第一个 IP 地址网络。这里解释一下主 IP 的概念，一般情况下，一个接口只需配置一个主 IP 地址，但在有些特殊情况下需要配置从 IP 地址。比如，一台路由器通过一个接口连接了一个物理网络，但该物理网络的计算机分别属于 2 个不同的网络，为了使路由器与物理网络中的所有计算机通信，就需要在该接口上配置一个主 IP 地址和一个从 IP 地址。**<font color="red">路由器的每个三层接口可以配置多个 IP 地址，其中一个为主 IP 地址，其余为从 IP 地址，每个三层接口最多可配置 31 个从 IP 地址</font>**。
+
+<div align="center">
+    <div align="center" style="color: #F14; font-size:13px; font-weight:bold">图 3 主 IP 网络不一致的路由器 R1 和 R2</div>
+    <img src="ospf_static//112.png" width="450"/>
+</div>
+
+在上图中，R1 通告的 OSPF 报文的源 IP 地址是 **`13.1.1.1`**，掩码是 24，主 IP 网络是 **`13.1.1.0/24`**，同理 R2 的主 IP 网络是 **`12.1.1.0/24`**。在上图中，R1 的接口有一个主 IP 地址 **`13.1.1.1/24`** 和一个从 IP 地址 **`12.1.1.1/24`**，R2 的接口有一个主 IP 地址 **`12.1.1.1/24`** 和一个从 IP 地址 **`13.1.1.1/24`**。最终计算时均以 R1 和 R2 上的主 IP 网络为准，R1 和 R2 的主 IP 网络不一致。
+
+如果这条链路是点到点链路，则 R1 和 R2 能建立邻居关系。如果是广播网络类型，则不能建立邻居关系。根据 RFC 的文档，**<font color="red">the values of the Network Mask, HelloInterval, and RouterDeadInterval fields in the received Hello packet must be checked against the values configured for the receiving interface.  Any mismatch causes processing to stop and the packet to be dropped. However, there is one exception to the above rule: on point-to-point networks and on virtual links, the Network Mask in the received Hello Packet should be ignored.</font>**。
+
+**（1）NMBA 和广播网络检查掩码**
+
+图 3 中，如果直连链路是以太网，当 R1 收到 R2 的 Hello 报文后，根据报文的源 IP 地址和 Hello 中的接口掩码，可算出 R2 的主 IP 网络和 R1 的主 IP 网络二者不一致，**由于 OSPF 设计要求接在同一个广播网络上的节点的主 IP 网络由虚节点来表达，虚节点不允许网络上有多个主 IP 网络，所以建立邻居关系时，不允许主 IP 网络不一致的网络节点间建立邻居关系**。这里的虚节点不是 RFC 中的正式术语，通常是很多工程师口中的伪节点（pseudonode）。
+
+OSPF 在描述网络拓扑时，会把链路状态数据库抽象成一张有向图，图中的顶点既包括路由器，也包括网络。对于物理点到点链路，OSPF 会把两台路由器看成直接相连；而对于广播网络或 NBMA 这类多接入网络，OSPF 的处理方式不同，OSPF 不会把同一网段上的路由器简单看成两两直连的关系，而是把这整段共享网络看成一个统一的网络节点（network vertex）。这样一来，挂在这段网络上的所有路由器，都是通过这个共同的网络节点彼此关联的。
+
+RFC 2328 的原文就是："The Autonomous System's link-state database describes a directed graph. The vertices of the graph consist of routers and networks" 以及 "When multiple routers are attached to a broadcast network, the link-state database graph shows all routers bidirectionally connected to the network vertex"。
+
+因此在广播网络或 NBMA 网络中，OSPF 并不是把同一网段上的路由器之间都看成独立的点到点关系，而是把整段共享链路抽象成一个统一的 transit network 节点。这个网络节点在链路状态数据库中由 DR 代表该网络生成 Type 2 Network-LSA 来描述，LSA 中携带该网络的掩码，并列出当前连接在这段网络上的路由器集合。同时，LSA 的 Link State ID 使用 DR 的接口地址，结合该唯一的网络掩码，就可以确定这段共享网络对应的 IP 网络。也就是说，在 OSPF 的建模里，同一个广播网络在 LSDB 和 SPF 计算中应当表现为一个统一的网络对象，而不是多个彼此独立、各自属于不同主 IP 网络的对象。
+
+正因为如此，接在同一个广播网络上的路由器，必须对这段共享网络到底属于哪个主 IP 网络有一致的认识。R1 根据自己的主 IP 地址和掩码认为这段以太网属于 **`13.1.1.0/24`**，而 R2 根据自己的主 IP 地址和掩码认为它属于 **`12.1.1.0/24`**，那么双方不在同一个主网段中，OSPF 就不会允许它们建立邻居关系。
+
+总结来说，既然这段广播网络在 OSPF 里被抽象成一个统一的 transit network 节点，并且由 Type 2 Network-LSA 用一个网络掩码来描述，那么它就只能对应一个统一的网络地址/掩码视图。如果同一段广播网络上同时出现多个不同的主 IP 网络，OSPF 就无法把它稳定地表示成一个一致的网络节点，因此会在 Hello 检查阶段直接拒绝建立邻居。
+
+**（2）点到点网络不检查掩码**
+
+图 3 中，默认情况下，R1 和 R2 间是点到点类型的网络，在 OSPF 中，点到点网络类型的节点间都可以独立表达自己接口的所有网络（使用 stub 类型 link），彼此间没有关系，建立邻居关系没有限制，所以 R1 和 R2 间建立邻居关系时既不检查掩码，也不检查源地址，能正常建立邻居关系。
+
+>结论：**<font color="red">OSPF 网络类型，如果是广播或非广播（NBMA）网络，则接在该网络上的所有节点上的主 IP 网络必须一致才能建立邻居关系。如果网络类型是 P2P 或 P2MP，则没有此要求</font>**。
+
+## 二、OSPF 网络类型
+
+OSPF 接口根据链路类型可分成 4 种网络类型：
+
+- Point-to-point networks（点对点网络）；
+- Broadcast networks（广播网络）；
+- NonBroadcast Multi-Access（NBMA）networks（非广播多接入网络）；
+- Point-to-Multipoint networks（点对多点网络）；
+
+网络类型分类如下所示：
+
+### 1.广播类型
+
+当链路层协议是 Ethernet 时，缺省情况下，OSPF 认为网络类型是 Broadcast。**<font color="red">在该类型的网络中，通常以组播形式发送 Hello 报文、LSU 报文和 LSAck 报文</font>**，以单播形式发送 DD 报文和 LSR 报文。
+
+Broadcast 网络是以太网等网络上的默认网络类型。RFC 文档对广播网络的定义是：Networks supporting many (more than two) attached routers, **together with the capability to address a single physical message to all of the attached routers (broadcast)**. Neighboring routers are discovered dynamically on these nets using OSPF's Hello Protocol. The Hello Protocol itself takes advantage of the broadcast capability. The OSPF protocol makes further use of multicast capabilities, if they exist. Each pair of routers on a broadcast network is assumed to be able to communicate directly. An ethernet is an example of a broadcast network。它对网络的要求是接在网络上的所有节点直接建立全互联的邻居，并自动选举 DR，完成和 DR 的同步。选举 DR 需要引入 Wait 时间，所以 Broadcast 网络上的邻居震荡时网络收敛时间较长。故很多园区网络中，如果网段只有两个 OSPF 节点，则使用 Point-to-Point 网络类型去替换需要选择 DR 的 Broadcast 网络类型，以提高收敛速度。
+
+在广播网络中，**`224.0.0.5`** 的组播地址为 OSPF 设备的预留 IP 组播地址，这条链路上所有运行 OSPF 的路由器都要监听；而 **`224.0.0.6`** 这个组播地址是为 **`OSPF DR/BDR (Backup Designated Router)`** 的预留 IP 组播地址，这条链路上只有 DR 和 BDR 要监听。**<font color="red">在广播网络上，所有路由器都向 AllSPFRouters 发送 hello 报文，DR 和 BDR 把 **`LSU/LSAck`** 发到 AllSPFRouters，而其他路由器（DROther）把 **`LSU/LSAck`** 发到 AllDRouters</font>**。另外，LSU 的重传始终是直接发给邻居，不是再发组播。RFC 的原文为：The only packets not sent as unicasts are on broadcast networks; on these networks Hello packets are sent to the multicast destination AllSPFRouters, the Designated Router and its Backup send both Link State Update Packets and Link State Acknowledgment Packets to the multicast address AllSPFRouters, while all other routers send both their Link State Update and Link State Acknowledgment Packets to the multicast address AllDRouters.
+
+LSU（Link State Update，链路状态更新报文） 的主要作用可概括为以下两个方面。
+
+**（1）承载并泛洪新的或更新后的 LSA**
+
+当网络拓扑或路由信息发生变化时，例如链路状态变化、接口开销调整、DR 重新选举，或者外部路由信息发生变更，相关路由器会生成新的 LSA。这些 LSA 会被封装在 LSU 报文中，并按照 OSPF 的 flooding 机制在区域内传播，使各路由器能够及时更新各自的链路状态数据库（LSDB）。根据 RFC 2328 的定义，路由器在收到 LSU 后，会对其中携带的各条 LSA 分别进行检查，并与本地 LSDB 中的对应实例比较新旧。**<font color="red">若接收到的 LSA 更新，则将其安装到本地 LSDB 中，并继续向相应接口泛洪，以保证区域内链路状态信息的一致性</font>**。
+
+作为 DROther，它在该网段上通常会把 LSU 发到 **`224.0.0.6`**（AllDRouters），因此 DR 和 BDR 会收到。随后由 DR 在该广播网段上向 **`224.0.0.5`** 继续泛洪。
+
+**（2）用于响应邻居的 LSR 请求，完成数据库同步**
+
+在邻居建立邻接关系并进行数据库同步的过程中，路由器首先通过 DBD（Database Description）报文获知对端 LSDB 中的 LSA 摘要信息，并据此识别本地缺失或版本落后的 LSA。随后，路由器通过 LSR（Link State Request）报文向邻居请求所需的具体 LSA，而对端则通过 LSU 报文返回这些完整的 LSA 内容。
+
+### 2.NBMA 类型
+
+当链路层协议是帧中继（Frame Relay）、ATM 时，缺省情况下，OSPF 认为网络类型是 NBMA。**<font color="red">在该类型的网络中，以单播形式发送协议报文（包括 Hello 报文、DD 报文、LSR 报文、LSU 报文、LSAck 报文）</font>**。
+
+NBMA 这种网络类型是 OSPF 在 FR/ATM 网络上的默认网络类型。虽然 FR 和 ATM 网络也是一种多点网络，**但却无法像以太网一样，使用组播/广播地址发单份报文给所有其他节点，所以被称为 NBMA 网络**。**<font color="red">这种网络需要使用手工方式来指定邻居，不能使用组播自动发现邻居。使用 Peer 命令相互指定邻居的接口 IP 以建立邻居关系，并仅以单播的形式接收和发送报文（所有报文都是单播）</font>**。NBMA 和 Broadcast 类型网络之间的区别只是发现邻居的方式不一样，LSDB 及计算拓扑的方式是一样的，甚至计算出的路由都是一样的。
+
+在下图中，如果 DR 在 R1，无 BDR，FR 网络上的 OSPF 网络类型是 NBMA 和 Broadcast，在路由计算上没有什么区别，路由表及拓扑表达都一样。R2 和 R3 间没有直连 PVC，所以 R2 和 R3 间没有 OSPF 邻居关系（**OSPF 不能跨路由器建立 OSPF 邻居关系**），但 R2 执行路由计算时，计算出到 **`10.1.3.0/24`** 网络，其下一跳是 **`10.1.123.3`**，这和广播型网络结果一样。
+
+<div align="center">
+    <div align="center" style="color: #F14; font-size:13px; font-weight:bold">图 4 FR 下的 OSPF</div>
+    <img src="ospf_static//113.png" width="280"/>
+</div>
+
+NBMA 这种网络类型不适宜不规整的非广播网络拓扑，**<font color="red">OSPF 认为使用 P2MP 的多点类型网络是由多个点到点的链路构成</font>**。这明显区别于 OSPF 在 FR 上的其他网络类型 NBMA。NBMA 按广播网络来计算路由，而 P2MP 像对待 P2P 网络一样来计算路由，其不选择 DR，所以建立邻接时速度会快些。图 4 场景中，如果网络类型被改成 P2MP，R2 上看到 R3 后面的网络 **`10.1.3.0/24`**，路由表中的下一跳是 HUB 点，Next-hop 为 **`10.1.123.1`**。**因为中间的 FR 网络被 P2MP 理解成两个 P2P 链路。逻辑拓扑是 R2 连接 R1，R1 连接 R3。R2 访问 R3，一定要经过 R1**。
+
+### 3.点对多点（P2MP）类型
+
+没有一种链路层协议会被缺省地认为是 Point-to-Multipoint 类型。点到多点必须是由其他的网络类型强制更改的，常用做法是将非全连通的 NBMA 改为点到多点的网络。在该类型的网络中：
+
+- 以组播形式（**`224.0.0.5`**）发送 Hello 报文；
+- 以单播形式发送其他协议报文（DD 报文、LSR 报文、LSU 报文、LSAck 报文）；
+
+P2MP 网络类型同样是为多点的网络而设计的一种网络类型。它的最大好处就是它可适用于任何不规则的网络。
+
+### 4.点对点（P2P）类型
+
+当链路层协议是 PPP、HDLC 和 FrameRelay（仅 P2P 类型子接口）时，缺省情况下，OSPF 认为网络类型是 P2P。在该类型的网络中，以组播形式（**`224.0.0.5`**）发送协议报文（Hello 报文、DD 报文、LSR 报文、LSU 报文、LSAck 报文）。Point-to-Point 这种网络类型需要工作在只有两个节点的环境中，彼此之间不需要选择 DR，建立邻居关系后，直接开始数据库同步，收敛较快。**<font color="red">在生产网络中，园区网中的核心层和汇聚层之间往往使用多个点到点类型链路来取代 VLAN 中的 Broadcast 类型的以太网链路</font>**。
