@@ -190,7 +190,7 @@ Router LSA 包含以下几项：
 - **`Flags`**：**<font color="red">V 若置位，代表是 Vlink endpoint；B 若置位，代表是 ABR；E 若置位代表是 ASBR</font>**。
 - **`Number of Links`**：Link 的数量，代表 OSPF 画出的有向图上的 Link 的数量，而非物理路由器接口的数量。
 
-Network LSA，简称为 LSA2，用来描述多点网络上的拓扑关系。**`Network LSA 仅会出现在网络类型是 Broadcast 或 NBMA 的网络`**上。Broadcast 和 NBMA 网络上会选举 DR，选举出来的 DR 除用于数据库同步外，DR 也负责产生 LSA2。LSA2 用于描述虚节点周边的连接关系。这个 LSA2 用 DR 路由器的接口 IP 来标识。
+Network LSA，简称为 LSA2，用来描述多点网络上的拓扑关系。**`Network LSA 仅会出现在网络类型是 Broadcast 或 NBMA 的网络`** 上。Broadcast 和 NBMA 网络上会选举 DR，选举出来的 DR 除用于数据库同步外，DR 也负责产生 LSA2。LSA2 用于描述虚节点周边的连接关系。这个 LSA2 用 DR 路由器的接口 IP 来标识。
 
 ```java{.line-numbers}
 v LS Update Packet
@@ -525,3 +525,118 @@ AR2 上的 network lsa 如下所示：
 - Broadcast 网络类型适用于广播网络的全互联网络场景，选举 DR/BDR，会主动发送组播 hello 报文；
 - NBMA 网络类型适用于非广播网络的全互联网络的场景，选举 DR/BDR，不会主动发送组播 hello 报文；
 - P2MP 适用于部分互联的网络场景，不会选举 DR/BDR，会主动发送组播 hello 报文，会产生 32 位 OSPF 主机路由；
+
+在 OSPF 的逻辑拓扑中，表达拓扑的点有代表路由器的实节点和代表 TransNet 网络的虚节点。如果把代表路由器的节点叫作实节点（Node），则把代表 TransNet 网络的节点用虚节点（Pseduonode）代表。
+
+网络分 TransNet 网络和 Stub 网络，二者的区别是 TransNet 网络上有至少两个节点，流量可以经过 TransNet 网络在节点间传递，而 Stub 网络仅代表连在一个节点（路由器）上的网络，流量只能进或者出该网络。Stub 网络包含如下类型：Loopback 接口的网络、无邻居的以太网接口网络及点到点链路上每个节点（路由器）所连的网络。
+
+TransNet 网络要表达 4 个节点间全互联可达的关系，在数学模型的描述中，把中间的 Network 表述成一个节点，并连接每个节点。
+
+## 3.SPF 路由计算
+
+### 3.1 OSPF 路由计算
+
+执行 SPF 计算包含三步：
+
+- 路由器根据 LSDB 中的 LSA 画出网络图，**<font color="red">在这个 Graph 上包含 OSPF 网络拓扑中所有点和边，画图需要使用 LSA1 中 `Point-to-Point`、`TransNet` 和 `Vlink` 类型的 link 及 LSA2 来描述拓扑</font>**。
+
+>由于每台路由器的 LSDB 内容一样，所以在每台路由器上根据 LSDB 中 LSA 画出的区域内的 Graph 也是一样的。区别是最先画起的路由器（起点路由器）不一样，**根据 RFC 2328 文档，每台路由器都是以自己为根来构造最短路径树**。
+
+- 路由器以自己为树根，对图（Graph）执行 SPF 计算。画出一棵由树根到图中每个节点的最短成本路径树，从树根到树上任何其他节点的成本是最小的。
+- 在树的节点上添加网络信息，并计算由树根到这些网络的成本及下一跳，并把计算结果加入到路由表中。把 SPF 树上添加的网络，称为叶子节点。SPF 已计算出树根到任何节点的最小距离，再把代表网络的叶子节点挂在 SPF 树的相应网络节点上。**`树根到网络的路由成本 = 树根到网络节点的距离 + 网络节点到叶子节点的成本`**。叶子节点可以是 LSA1 中的 StubNet、LSA2 中的网络、LSA3 的网络、LSA5/7 的网络。
+
+>Stub 网络挂在路由器节点（实节点）上，LSA2 中网络挂在虚节点上，LSA3 的网络挂在 ABR 节点上，LSA7 挂在 ASBR 节点上，而 LSA5 则可能挂在 ASBR 或 ABR 上，这要依 ASBR 路由器是否在当前区域内而定。
+
+因此，OSPF 的区域内最短路径计算更准确地说是一个两阶段过程。第一阶段先构造网络主干，也就是仅依据 routers 与 transit networks 之间的连接关系，建立最短路径树的主干结构。RFC 2328 的原文是：At first the tree is constructed by only considering those links between routers and transit networks. Then the stub networks are incorporated into the tree。在主干树建立完成后，第二阶段才把各路由器 Router-LSA 中描述的 stub networks 挂接到对应的树节点上。这样做的原因在于 stub network 本身不会影响到其他中转节点之间的最短路径结构。
+
+### 3.2 iSPF
+
+在路由计算方面，优化网络中的 SPF 计算过程，可降低计算负荷和收敛时间。iSPF 其主要思想就是增量计算（即只计算变化的部分，而不是全部计算）。SPF 算法将整个网络信息分为两个部分，如下图所示，**<font color="red">一个部分是网络的节点（对应于网络中的路由器、共享网段）和边（路由器以及共享网段之间的链路）组成的网络拓扑；另一个部分是挂在节点上的叶子（网段路由、主机路由等）</font>**。执行路由计算的路由器为树根（Root）。
+
+<div align="center">
+    <img src="ospf_static/128.png" width="450"/>
+</div>
+
+当网络链路状态发生变化时，iSPF 会判断出哪部分网络拓扑受到了影响，从而只计算那些受到了影响的部分，而不是全部网络拓扑。
+
+网络拓扑变化的位置不同，受到影响的范围就不同，iSPF 计算所消耗的时间就不同，所以，iSPF 计算所消耗的时间是不确定的，即使是在相同的网络结构中。当然，如果发生变化的是根节点的边，那么受影响的范围就包括了整个拓扑，在这种情况下，iSPF 相当于进行了全部重新计算（Full SPF）。
+
+### 3.3 PRC
+
+任何一条路由都是网络节点上的一片树叶，即叶子节点，**<font color="red">从根节点看，只要到树中任何实（或虚）节点的最短路径确定了，到叶子节点的最短路径也就确定了</font>**，那么到节点发布的路由的最短路径也就确定了。因此，PRC 就是在 iSPF 计算出的最短路径树基础上再来计算叶子节点代表的路由。当有路由信息改变，PRC 直接判断在哪条链路上的节点的哪个叶子出现变化，之后直接进行路由的计算与更新。
+
+### 3.4 路由计算示例
+
+**（1）案例一**
+
+物理网络如下图所示，计算 R4 到图中所有网络的路由。图中，Loop0 接口的 OSPF 成本设为 1。
+
+<div align="center">
+    <img src="ospf_static/129.png" width="500"/>
+</div>
+
+逻辑拓扑图如下所示，图是有向图，任何路由器上画出的图都一样。
+
+<div align="center">
+    <img src="ospf_static/130.png" width="350"/>
+</div>
+
+计算以 R4 为树根的 SPF 树，如下所示：
+
+<div align="center">
+    <img src="ospf_static/131.png" width="300"/>
+</div>
+
+添加叶子节点并计算路由，如下所示：
+
+<div align="center">
+    <img src="ospf_static/132.png" width="450"/>
+</div>
+
+从上图中可以看出，R4 路由器到网络 **`30.1.1.0/24`**，下一跳是 R1，路径成本是 **`40+11+0+10=61`**。这里解释一下，cost 的计算方式。
+
+根据 RFC 2328 文档，Arcs are labelled with the cost of the corresponding router output interface. 除此之外，Interface output cost is the cost of sending a data packet on the interface, expressed in the link state metric. This is advertised as the link cost for this interface in the router-LSA. The cost of an interface must be greater than zero. **<font color="red">也就是说，OSPF 会给每个接口分配一个 cost，这个 cost 表示从本路由器经这个接口把包发出去的代价</font>**。这个代价随后会被写进本路由器发布的 Router-LSA 里，供全网其他 OSPF 路由器计算最短路径时使用。这里强调的是输出方向（output cost），所以同一条链路两端的 cost 可以不同。RFC 对点到点接口描述内容，Router-LSA 里的 cost 要设置为 the output cost of the point-to-point interface。另外，网络到路由器的代码都是 0，这是因为 RFC 规定了 arcs leading from networks to routers always have cost 0。
+
+到 **`14.1.1.0/24`**，R4 在树上有两条路都能到达 **`14.1.1.0/24`**，选择成本最小的一条放到路由表里，在 OSPF 路由表（Display Ospf Routing）中，到 **`14.1.1.0/24`** 成本是 40。但 IP 路由表中，由于有直连路由 **`14.1.1.0/24`** 存在，所以路由表中看不到 OSPF 的 **`14.1.1.0/24`** 路由。
+
+**`123.1.1.0/24`** 这条路由是图中的多点网络，由虚节点 N 所代表，可把 **`123.1.1.0/24`** 表示成挂在虚节点后面的叶子节点，虚节点不引入额外成本，故向外延伸的方向的成本都是 0，成本是 **`40+11+0=51`**。
+
+**（2）案例二**
+
+根据前面的分析，我们可以将前面的实验拓扑图简化成如下所示的逻辑拓扑图（含接口的 cost）：
+
+<div align="center">
+    <img src="ospf_static/133.png" width="800"/>
+</div>
+
+计算以 AR1 为树根的 SPF 树，R1 到拓扑图中各网段的 cost 代价如下所示，注意计算从 AR1 到其余网段路径代价 cost 时均使用出接口的 cost 来计算。
+
+```java{.line-numbers}
+<AR1>display ospf routing
+
+	 OSPF Process 1 with Router ID 1.1.1.1
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.1.1/32        0     Stub       10.1.1.1        1.1.1.1         0.0.0.2
+ 10.1.123.0/24      1     Transit    10.1.123.1      1.1.1.1         0.0.0.2
+ 10.1.2.2/32        1     Stub       10.1.123.2      2.2.2.2         0.0.0.2
+ 10.1.3.3/32        1     Stub       10.1.123.3      3.3.3.3         0.0.0.2
+ 10.1.4.4/32        14    Inter-area 10.1.123.2      2.2.2.2         0.0.0.2
+ 10.1.5.5/32        1576  Inter-area 10.1.123.2      2.2.2.2         0.0.0.2
+ 10.1.22.22/32      1     Inter-area 10.1.123.2      2.2.2.2         0.0.0.2
+ 10.1.33.33/32      1     Inter-area 10.1.123.3      3.3.3.3         0.0.0.2
+ 10.1.44.44/32      14    Inter-area 10.1.123.2      2.2.2.2         0.0.0.2
+ 10.1.45.0/24       1576  Inter-area 10.1.123.2      2.2.2.2         0.0.0.2
+ 10.1.234.0/24      14    Inter-area 10.1.123.2      2.2.2.2         0.0.0.2
+
+ Total Nets: 11 
+ Intra Area: 4  Inter Area: 7  ASE: 0  NSSA: 0 
+```
+
+## 4.DR 和 BDR 选举
+
+只要网络类型是 Broadcast 或 NBMA，且这个网络上有多于一台路由器，则此网络需要且必定要选举 DR。DR 的作用一是用于数据库同步，二是为代表网络的虚节点产生 LSA2。DR 是 MA 网络上负责数据库同步的路由器，网络上所有路由器都和 DR 有邻接关系。路由器优先级在 1～255 之间都有资格成为 DR。每台路由器根据收到的 Hello 看是否有路由器已声称为 DR。
+
+在 Wait 时间后，开始选举 DR，优先级高的路由器成为 DR，否则 RouterID 高的路由器成为 DR。DR 不能被抢占，一旦选举结束，即使有更高优先级的路由器接到网络中来，也不能抢占成为 DR，同样也不会抢占成为 BDR。这是为了保持网络稳定，避免震荡。当 DR 选举完成后，如果当前 DR 失效，则 BDR 成为 DR，并重新选举 BDR。
