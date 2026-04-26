@@ -25,7 +25,7 @@ OSPF 的选路规则如下所示：
 
 下面对 OSPF 选路规则进行举例：
 
-例 1：路由 1: LSA3 类型路由 10.1.1.0/24,成本是 10；路由 2: LSA2 所通告的路由 10.1.1.0/24，计算后的成本为 1。无论计算结果是多少，只要是 LSA1 或 LSA2 所通告的路由，都优于 LSA3 所通告的路由。
+例 1：路由 1: LSA3 类型路由 **`10.1.1.0/24`**,成本是 10；路由 2: LSA2 所通告的路由 **`10.1.1.0/24`**，计算后的成本为 1。无论计算结果是多少，只要是 LSA1 或 LSA2 所通告的路由，都优于 LSA3 所通告的路由。
 
 例 2：路由 1：外部路由 LSA5，外部成本是 20，内部成本是 100，cost-type 1；路由 2：外部路由 LSA7，外部成本是 10，内部成本是 110，cost-type 1。两条路由 Cost-type 都是 type1，根据选路规则，比较两条路由的端到端开销之和，内外开销之和都是 120，两条路由负载分担出现在路由表中。
 
@@ -35,7 +35,38 @@ OSPF 的选路规则如下所示：
     <img src="ospf_static/146.png" width="650" height="330"/>
 </div>
 
-我们使用上述拓扑图中 AR2 到达 **`10.1.13.0/24`** 网段路径来验证 OSPF 选路规则。AR2 的 OSPF lsdb 如下所示：
+我们使用上述拓扑图中 AR2 到达 **`10.1.13.0/24`** 网段路径来验证 OSPF 选路规则，上述拓扑图中的 area1 是 NSSA 区域。
+
+AR4 上的配置如下所示：
+
+```java{.line-numbers}
+#
+sysname AR4
+#
+interface GigabitEthernet0/0/0
+ ip address 10.1.24.4 255.255.255.0 
+ ospf cost 1
+#
+interface GigabitEthernet0/0/1
+ ip address 10.1.34.4 255.255.255.0 
+#
+interface LoopBack0
+ ip address 10.1.4.4 255.255.255.255 
+ ospf cost 1
+#
+ospf 1 router-id 4.4.4.4 
+ import-route direct cost 1 type 2 route-policy IMPORT_AR4_LOOPBACK
+ area 0.0.0.0 
+  network 10.1.34.4 0.0.0.0 
+  network 10.1.24.4 0.0.0.0 
+#
+route-policy IMPORT_AR4_LOOPBACK permit node 10 
+ if-match ip-prefix AR4_LOOPBACK0 
+#
+ip ip-prefix AR4_LOOPBACK0 index 10 permit 10.1.4.4 32
+```
+
+AR2 的 OSPF lsdb 如下所示：
 
 ```java{.line-numbers}
 <AR2>display ospf lsdb 
@@ -187,6 +218,138 @@ AR4 在 Area2 上收到的 LSA4 和 AR5 在 Area0 上收到的 LSA4 如下所示
 
 因此 AR4 收到的 LSA4 中的 metric 是 4，表示 AR3 告诉 Area 2 内部路由器：如果你们要到 ASBR AR1，从我 AR3 这里看过去，cost 是 4。这是因为 AR3 到 AR1 的最优路径是 **`AR3->AR2->AR1`**，因此 cost 值累加为 4。对于 AR5 来说同理。
 
+### 1.3 LSA4 报文实例
+
+<div align="center">
+    <img src="ospf_static/149.png" width="600"/>
+</div>
+
+以上述拓扑图为例，在 AR2 和 AR3 上分别引入直连外部路由 **`10.1.2.2/24`** 和 **`10.1.3.3/24`**，AR2 配置如下所示：
+
+```java{.line-numbers}
+#
+ sysname AR2
+#
+interface GigabitEthernet0/0/0
+ ip address 10.1.123.2 255.255.255.0 
+#
+interface GigabitEthernet0/0/1
+ ip address 10.1.234.2 255.255.255.0 
+#
+interface LoopBack0
+ ip address 10.1.2.2 255.255.255.0 
+#
+ospf 1 router-id 2.2.2.2 
+ import-route direct cost 1 type 2 route-policy AR2_LOOPBACK0
+ area 0.0.0.0 
+  network 10.1.234.2 0.0.0.0 
+ area 0.0.0.1 
+  network 10.1.123.2 0.0.0.0 
+#
+route-policy AR2_LOOPBACK0 permit node 10 
+ if-match ip-prefix AR2_LOOPBACK0 
+#
+ip ip-prefix AR2_LOOPBACK0 index 10 permit 10.1.2.0 24
+```
+
+AR3 的配置如下所示：
+
+```java{.line-numbers}
+#
+ sysname AR3
+#
+interface GigabitEthernet0/0/0
+ ip address 10.1.123.3 255.255.255.0 
+#
+interface GigabitEthernet0/0/1
+ ip address 10.1.234.3 255.255.255.0 
+#
+ospf 1 router-id 3.3.3.3 
+ import-route direct cost 10 type 2 route-policy AR3_LOOPBACK0
+ area 0.0.0.0 
+  network 10.1.234.3 0.0.0.0 
+ area 0.0.0.1 
+  network 10.1.123.3 0.0.0.0 
+#
+route-policy AR3_LOOPBACK0 permit node 10 
+ if-match ip-prefix AR3_LOOPBACK0 
+#
+ip ip-prefix AR3_LOOPBACK0 index 20 permit 10.1.3.0 24
+```
+
+在上述拓扑图中，AR2 和 AR3 是 ABR + ASBR，AR2 会向 Area0 和 Area1 中泛洪到 AR3 这个 ASBR 的 LSA4，同理，AR3 会向 Area0 和 Area1 中泛洪到 AR2 这个 ASBR 的 LSA4。根据 RFC 2328 的原文，Only Destination Types of network and AS boundary router are advertised in summary-LSAs. 也就是说只有目的类型为 network 和 ASBR 的路由，才会通过 Summary-LSA 进行通告。同时，Else, if the destination of this route is an AS boundary router, a summary-LSA should be originated if and only if the routing table entry describes the preferred path to the AS boundary router. 否则，如果该路由的目的地是一个 ASBR，则当且仅当该路由表项描述的是到该 ASBR 的首选路径时，才应该为它产生 Summary-LSA。
+
+严格来说，LSA4 和 LSA3 的产生逻辑一样，ABR 发现本区域有 ASBR，就会向骨干区域产生 Type-4 LSA，骨干区域的 ABR 发现骨干区域有 Type-4 LSA, 向非骨干区域重新产生 Type-4 LSA, 修改 advRouter 为自己，ABR 不会把非骨干区域的 Type-4 LSA 向骨干区域产生 Type-4 LSA。ABR 只计算来自骨干区域的 Type-4 LSA 为 ASE 的路由。因此 AR2 引入外部直连路由 **`10.1.2.2/24`** 后，AR3 会向骨干区域中产生 Type-4 LSA，接着向非骨干区域 Area1 中产生 Type-4 LSA。
+
+```java{.line-numbers}
+<AR2>display ospf lsdb 
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		 Link State Database 
+
+		         Area: 0.0.0.0
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ Router    4.4.4.4         4.4.4.4            600  36    8000000A       1
+ Router    2.2.2.2         2.2.2.2            271  36    8000000C       1
+ Router    3.3.3.3         3.3.3.3             98  36    8000000A       1
+ Network   10.1.234.2      2.2.2.2            611  36    80000008       0
+ Sum-Net   10.1.45.0       4.4.4.4            567  28    80000005       1
+ Sum-Net   10.1.123.0      2.2.2.2            825  28    80000005       1
+ Sum-Net   10.1.123.0      3.3.3.3            704  28    80000005       1
+ Sum-Asbr  3.3.3.3         2.2.2.2             97  28    80000004       1     *AR3 向 Area0 通告到 AR2 ASBR 的 LSA4   
+ Sum-Asbr  2.2.2.2         3.3.3.3            272  28    80000005       1
+ 
+		         Area: 0.0.0.1
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ Router    2.2.2.2         2.2.2.2            271  36    8000000B       1
+ Router    1.1.1.1         1.1.1.1            711  36    8000000B       1
+ Router    3.3.3.3         3.3.3.3             98  36    8000000B       1
+ Network   10.1.123.1      1.1.1.1            711  36    80000008       0
+ Sum-Net   10.1.45.0       2.2.2.2            565  28    80000005       2
+ Sum-Net   10.1.45.0       3.3.3.3            567  28    80000005       2
+ Sum-Net   10.1.234.0      2.2.2.2            825  28    80000005       1
+ Sum-Net   10.1.234.0      3.3.3.3            704  28    80000005       1
+ Sum-Asbr  3.3.3.3         2.2.2.2             96  28    80000004       1      *AR3 向 Area1 通告到 AR2 ASBR 的 LSA4
+ Sum-Asbr  2.2.2.2         3.3.3.3            273  28    80000005       1
+ 
+		 AS External Database
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ External  10.1.2.0        2.2.2.2            271  36    80000005       1
+```
+
+需要注意的是，**`Type 5 AS-external-LSA`** 由 ASBR 产生，用来描述外部路由；**`Type 4 Summary-LSA`** 由 ABR 产生，用来向其他区域通告"如何到达这个 ASBR"。所以，单纯作为 ASBR 的路由器不会为自己产生 LSA4。但要注意一个特殊点，如果一台路由器同时是 ABR + ASBR，**<font color="red">它作为 ASBR 会产生 Type 5；同时它作为 ABR 时，也可能为 "其他 ASBR" 产生 Type 4</font>**。因此，当 AR3 也引入外部直连路由时，AR2 作为 ABR 也会为 AR3 这个 ASBR 产生 LSA4，如下所示：
+
+```java{.line-numbers}
+<AR2>display ospf lsdb asbr self-originate 
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		         Area: 0.0.0.0
+		 Link State Database 
+
+  Type      : Sum-Asbr
+  Ls id     : 3.3.3.3
+  Adv rtr   : 2.2.2.2  
+  Ls age    : 408 
+  Len       : 28 
+  Options   :  E  
+  seq#      : 80000004 
+  chksum    : 0x9aa9
+  Tos 0  metric: 1
+		         Area: 0.0.0.1
+		 Link State Database 
+
+
+  Type      : Sum-Asbr
+  Ls id     : 3.3.3.3
+  Adv rtr   : 2.2.2.2  
+  Ls age    : 407 
+  Len       : 28 
+  Options   :  E  
+  seq#      : 80000004 
+  chksum    : 0x9aa9
+  Tos 0  metric: 1
+```
+
 ## 2.LSA5
 
 ### 2.1 LSA5 的报文格式
@@ -286,11 +449,92 @@ LSA5 区别于 LSA3/LSA4，LSA5 仅负责通告 OSPF 路由域外其他协议的
 
 LSA5 的作用是除了向路由域中路由器通告外部路由外，还告知其他路由器如何访问该外部网络。**根据 LSA5 中的 FA（Forwarding Address）地址决定访问外部网络是经过 ASBR 还是经过拥有 FA 地址（非 0）的路由器**。
 
+### 2.3 LSA5 泛洪
+
+LSA5 可以在区域间泛洪，这与 LSA3 和 LSA4 不同。在骨干区域分割或普通区域不连接骨干区域的场景下，LSA5 依然可以不经 Virtual Link，直接经 Transit 区域流入其他区域。这与 **`LSA1/2/3/4`** 需要经 Vlink 传递到其他区域不同，这是因为 LSA5 和其他类型 LSA 的泛洪范围不一致，LSA5 没有必要在 Vlink 和 TransitArea1 中重复泛洪。LSA5 不在 Vlink 上传递。
+
+<div align="center">
+    <img src="ospf_static/148.png" width="550"/>
+</div>
+
+上图中的 LSA5 在没有 Vlink 的情况下，R5 引入的外部路由依然可以进入 Area2，但却无法进入路由表。LSA5 虽可以直接流入 Area2，**<font color="red">但 LSA5 所通告路由能否进入路由表则依赖于 LSA5 中 FA 地址的可达性</font>**。如果 **`FA=0.0.0.0`**，则 LSA5 依赖于 LSA4；如果 **`FA!=0.0.0.0`**，则依赖于 FA 地址路由（使用 LSA3 通告），由于区域分割，LSA3/LSA4 都不能流入 Area2，所以 LSA5 的路由无法进入路由表。
+
+LSA5 依赖于 LSA4 或 LSA3 来计算 OSPF 路由域内的访问路径。LSA3/LSA4 在区域间有水平分割规则能避免区域间路由所致的环路，LSA3/LSA4 无环，则依赖 LSA3/4 的 LSA5 也无环。这就解释了为什么 LSA5 没有像 LSA3 一样对区域结构有要求，还可以经 ABR 泛洪到任何区域，却不易出现环路的原因。
+
 ## 3.NSSA 和 LSA7
 
 ### 3.1 NSSA 区域
 
+NSSA（Not So Stubby Area）是一类特殊的区域，区别于 Stub 区域，可以在 NSSA 中部署 ASBR，并引入外部路由，不需要经过 Area0 访问外部目标网络，NSSA 区域如下图所示。OSPF 规定 Stub 区域是不能引入外部路由的，这样可以避免大量外部路由对 Stub 区域路由器带宽和存储资源的消耗。对于既需要引入外部路由又要避免外部路由带来的资源消耗的场景，Stub 区域就不再满足需求了，因此产生了 NSSA 区域。
 
+<div align="center">
+    <img src="ospf_static/147.png" width="650"/>
+</div>
+
+OSPF NSSA 区域（Not-So-Stubby Area）是 OSPF 新增的一类特殊的区域类型。NSSA 区域和 Stub 区域有许多相似的地方。两者的差别在于，**<font color="red">NSSA 区域能够将外部路由引入并传播到整个 OSPF 路由域中，同时又不会学习来自 OSPF 网络其他区域的外部路由</font>**。
+
+NSSA 区域连接骨干区域，其区域边界路由器是 ABR，同时也是 ASBR。华为的 NSSA 区域边界路由器默认向 NSSA 区域内泛洪 LSA7 默认路由，如上图所示。
+
+NSSA 区域边界路由器 ABR 的特性：
+
+- ABR 在 Area1 和 Area0 间传递区域间路由。
+- LSA7（置 P 位）经 ABR 7/5 翻译后，产生 LSA5 泛洪到 Area0 及其他区域。
+- 默认情况下，向 NSSA 区域通告 LSA7 默认路由。
+- 如果区域类型为 Totally NSSA，ABR 也可以向 NSSA 区域产生 LSA3 的默认路由。
+
+LSA7 作用：
+
+- Type7 LSA 是为了支持 NSSA 区域而新增的一种 LSA 类型，用于通告引入的外部路由信息。
+- **Type7 LSA 由 NSSA 区域的自治域边界路由器（ASBR）产生，其扩散范围仅限于 ASBR 所在的 NSSA 区域**。
+- NSSA 区域的区域边界路由器（ABR）收到 Type7 LSA 时，会有选择地将其转化为 Type5 LSA，以便将外部路由信息通告到 OSPF 网络的其他区域。
+- LSA5/LSA4 不会流入 NSSA 区域，所以 Area1 的 ABR 会各自注入 LSA7 的默认路由到 Area1，这样区域内路由器可以通过默认路由访问外部网络，ABR 同时也是 ASBR。
+- **<font color="red">LSA7 的 FA 一定要为非 0</font>**，用于在区域间选路。
+
+需要强调的一点是 LSA7 的 FA 地址和 LSA5 的 FA 内容上有如下区别：
+
+- LSA5 的 FA 可以是 0 和非 0 两种情况。
+- LSA7 的 FA 值如下：
+  - 在 NSSA 区域边界路由器上引入外部路由，产生 LSA7，其 FA 地址为 0。协议规定 FA=0 的 LSA7 的路由是不会被通告到骨干区域的。
+  - FA 不为 0 的情况。在 NSSA 中，ASBR 引入的外部路由，除上面特例外，都是非 0，LSA5 的 4 条规则同样适用 LSA7。
+
+如果满足 4 条规则，**<font color="red">`FA!=0`，地址是 ASBR 上外部路由的下一跳地址。如果不满足某条规则，**`FA!=0`**，地址是 ASBR 上某个接口 IP 地址，优选回环接口地址，如果没有回环接口，则使用物理接口地址</font>**。
+
+### 3.2 LSA7 翻译
+
+在 Area1 中 LSA7 作用和 LSA5 一致，有相同的格式，包括外部路由及掩码、Forwarding-Address Tag、Cost-Type 及 Cost。
+
+LSA7 与 LSA5 的不同之处：
+
+- LSA7 仅在 NSSA 区域里泛洪；
+- LSA7 的 FA 为非 0；如果为 0，则不会被 ABR 翻译为 LSA5。
+- 外部路由在 NSSA 区域里使用 LSA7 来传递，在其他区域由 LSA5 来传递，ABR 负责做 7/5 翻译。
+- LSA7 中选项位 P-bit（Propagate bit）用于告知翻译路由器该条 Type7 LSA 是否需要翻译。
+- **<font color="red">缺省情况下，转换路由器是 NSSA 区域中 Router ID 最大的区域边界路由器</font>**。
+- **<font color="red">只有 P-bit 置位并且 FA（Forwarding Address）不为 0 的 Type7 LSA 才能转化为 Type5 LSA</font>**。
+- 若在 ABR 上引入外部路由，产生的 Type7 LSA 不会置 P-bit，所以不会再被通告到 Area0。
+
+华为为 NSSA 区域中路由器可以使用如下命令：
+
+```java{.line-numbers}
+nssa translator-always              // 可以指定 7/5 转换器。
+nssa suppress-forwarding-address    // 命令可以指定在 7/5 转换器翻译时，修改默认的 FA 地址为 0。
+nssa default-route-advertise        // 可以指定 ABR 或任何 NSSA 区域中路由器产生 LSA7 默认路由。
+```
+
+当 NSSA 区域中有多个 ABR 时，系统会根据规则自动选择一个 ABR 作为转换器，缺省情况下 NSSA 区域选择 Router ID 最大的设备。通过在 ABR 上配置 **`translator-always`** 参数，可以将任意一个 ABR 指定为转换器。也可以同时指定两个 ABR 为转换器，可以通过配置 **`translator-always`** 来指定两个转换器同时工作。也可用于固定一台路由器为转换器，防止由于转换器变动而引起的 LSA 重新泛洪。
+
+根据 RFC 3101 的原文，When an NSSA border router originates both a Type-5 LSA and a Type-7 LSA for the same network, then the P-bit must be clear in the Type-7 LSA so that it isn't translated into a Type-5 LSA by another NSSA border router. 当一个 NSSA 边界路由器针对同一个网络同时产生 Type-5 LSA 和 Type-7 LSA 时，那么这个 Type-7 LSA 中的 P-bit 必须清零，这样它就不会被另一个 NSSA ABR 边界路由器再翻译成 Type-5 LSA，造成重复通告甚至潜在选路问题。
+
+If the border router only originates a Type-7 LSA, it may set the P-bit so that the network may be aggregated/propagated during Type-7 translation. 如果该边界路由器只产生 Type-7 LSA，那么它可以设置 P-bit，使该网络可以在 Type-7 翻译过程中被聚合或传播。
+
+同时，The Type-7 default LSA originated by an NSSA border router must have the P-bit clear. 由 NSSA 边界路由器产生的 Type-7 默认 LSA 必须将 P-bit 清零。
+
+因此 ABR 上引入外部路由，产生的 Type7 LSA 是否会置 P-bit：
+
+- NSSA 内部 ASBR 产生 Type-7，想让路由进入整个 OSPF 域：应置 P-bit；
+- NSSA ABR 同时为同一网络产生 Type-5 和 Type-7：Type-7 的 P-bit 必须清零；
+- NSSA ABR 只产生 Type-7：可以置 P-bit；
+- **<font color="red">NSSA ABR 产生 Type-7 默认路由：P-bit 必须清零</font>**；
 
 ## 4.Forwarding Address 的作用
 
@@ -552,3 +796,5 @@ FA 为 **`0.0.0.0`**，访问外部路由的数据包转发给 ASBR。如果 FA 
 - LSA5 中的 FA 的内容。
   - 如果 **`FA=0.0.0.0`**，区域内根据 LSA1/2 计算路由，区域间根据 LSA4 计算路由。
   - 如果 **`FA!=0.0.0.0`**，区域内根据 LSA1/2 计算路由，区域间根据 LSA3 计算路由。
+
+## 5.FA 
