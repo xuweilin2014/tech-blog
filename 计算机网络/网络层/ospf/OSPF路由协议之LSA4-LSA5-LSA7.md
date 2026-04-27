@@ -497,7 +497,7 @@ LSA7 作用：
   - 在 NSSA 区域边界路由器上引入外部路由，产生 LSA7，其 FA 地址为 0。协议规定 FA=0 的 LSA7 的路由是不会被通告到骨干区域的。
   - FA 不为 0 的情况。在 NSSA 中，ASBR 引入的外部路由，除上面特例外，都是非 0，LSA5 的 4 条规则同样适用 LSA7。
 
-如果满足 4 条规则，**<font color="red">`FA!=0`，地址是 ASBR 上外部路由的下一跳地址。如果不满足某条规则，**`FA!=0`**，地址是 ASBR 上某个接口 IP 地址，优选回环接口地址，如果没有回环接口，则使用物理接口地址</font>**。
+如果满足 4 条规则，**<font color="red">`FA!=0`，地址是 ASBR 上外部路由的下一跳地址。如果不满足某条规则，**`FA!=0`**，地址是 ASBR 上某个接口 IP 地址，优选【使能 OSPF】的回环接口地址，如果没有回环接口，则选用【使能 OSPF】的物理接口地址</font>**。
 
 ### 3.2 LSA7 翻译
 
@@ -535,6 +535,179 @@ If the border router only originates a Type-7 LSA, it may set the P-bit so that 
 - NSSA ABR 同时为同一网络产生 Type-5 和 Type-7：Type-7 的 P-bit 必须清零；
 - NSSA ABR 只产生 Type-7：可以置 P-bit；
 - **<font color="red">NSSA ABR 产生 Type-7 默认路由：P-bit 必须清零</font>**；
+
+### 3.3 LSA7 报文实例
+
+<div align="center">
+    <img src="ospf_static/150.png" width="600"/>
+</div>
+
+我们以如下的拓扑图为例，其中 Area1 被设置为 NSSA 区域，AR2 上的配置如下所示，在 AR2 上有 2 个 LoopBack 接口，其中 LoopBack0 作为直连外部路由引入到 OSPF 中，产生 LSA7，LoopBack1 是直连路由直接宣告 OSPF。
+
+```java{.line-numbers}
+#
+ sysname AR2
+#
+interface GigabitEthernet0/0/0
+ ip address 10.1.123.2 255.255.255.0 
+#
+interface GigabitEthernet0/0/1
+ ip address 10.1.234.2 255.255.255.0 
+#
+interface LoopBack0
+ ip address 10.1.2.2 255.255.255.0 
+#
+interface LoopBack1
+ ip address 10.1.22.22 255.255.255.0 
+#
+ospf 1 router-id 2.2.2.2 
+ import-route direct cost 1 type 2 route-policy AR2_LOOPBACK0
+ area 0.0.0.0 
+  network 10.1.234.2 0.0.0.0 
+ area 0.0.0.1 
+  network 10.1.22.22 0.0.0.0 
+  network 10.1.123.2 0.0.0.0 
+  nssa
+#
+route-policy AR2_LOOPBACK0 permit node 10 
+ if-match ip-prefix AR2_LOOPBACK0 
+#
+ip ip-prefix AR2_LOOPBACK0 index 10 permit 10.1.2.0 24
+```
+
+AR3 的配置如下所示，在 AR3 上有 1 个 LoopBack 接口 **`10.1.3.3/24`**，作为直连外部路由引入到 OSPF 中，产生 LSA7。
+
+```java{.line-numbers}
+#
+ sysname AR3
+#
+interface GigabitEthernet0/0/0
+ ip address 10.1.123.3 255.255.255.0 
+#
+interface GigabitEthernet0/0/1
+ ip address 10.1.234.3 255.255.255.0 
+#
+interface LoopBack0
+ ip address 10.1.3.3 255.255.255.0 
+#
+ospf 1 router-id 3.3.3.3 
+ import-route direct cost 10 type 2 route-policy AR3_LOOPBACK0
+ area 0.0.0.0 
+  network 10.1.234.3 0.0.0.0 
+ area 0.0.0.1 
+  network 10.1.123.3 0.0.0.0 
+  nssa
+#
+route-policy AR3_LOOPBACK0 permit node 10 
+ if-match ip-prefix AR3_LOOPBACK0 
+#
+ip ip-prefix AR3_LOOPBACK0 index 20 permit 10.1.3.0 24
+```
+
+如前所述，当一个 NSSA 边界路由器针对同一个网络同时产生 Type-5 LSA 和 Type-7 LSA 时，那么这个 Type-7 LSA 中的 P-bit 必须清零，这样它就不会被另一个 NSSA ABR 边界路由器再翻译成 Type-5 LSA。AR2 中的 OSPF LSDB 如下所示，可以看到，AR2 作为 NSSA ABR 同时也是 ASBR，它向 Area1 中产生了 Type-7 LSA 的默认路由，也产生了 Type-7 LSA 来通告 LoopBack0 的外部路由，同时 AR2 也向 Area0 中产生了 Type-5 LSA，**<font color="red">因此 AR2 向 Area1 中产生的 Type-7 LSA 中 P-bit 被清零了，AR3 不会再将其翻译成 Type-5 LSA 泛洪到 Area0 中</font>**。
+
+```java{.line-numbers}
+<AR2>display ospf lsdb 
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		 Link State Database 
+
+		         Area: 0.0.0.0
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ Router    4.4.4.4         4.4.4.4            852  36    80000006       1
+ Router    2.2.2.2         2.2.2.2            851  36    80000006       1
+ Router    3.3.3.3         3.3.3.3            858  36    80000005       1
+ Network   10.1.234.4      4.4.4.4            852  36    80000003       0
+ Sum-Net   10.1.45.0       4.4.4.4            904  28    80000001       1
+ Sum-Net   10.1.22.22      2.2.2.2            893  28    80000001       0
+ Sum-Net   10.1.22.22      3.3.3.3            846  28    80000001       1
+ Sum-Net   10.1.123.0      2.2.2.2            893  28    80000001       1
+ Sum-Net   10.1.123.0      3.3.3.3            898  28    80000001       1
+ 
+		         Area: 0.0.0.1
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ Router    2.2.2.2         2.2.2.2            846  48    80000007       1
+ Router    1.1.1.1         1.1.1.1            847  36    80000005       1
+ Router    3.3.3.3         3.3.3.3            846  36    80000007       1
+ Network   10.1.123.3      3.3.3.3            850  36    80000003       0
+ Sum-Net   10.1.45.0       2.2.2.2            857  28    80000001       2
+ Sum-Net   10.1.45.0       3.3.3.3            858  28    80000001       2
+ Sum-Net   10.1.234.0      2.2.2.2            893  28    80000001       1
+ Sum-Net   10.1.234.0      3.3.3.3            899  28    80000001       1
+ NSSA      0.0.0.0         2.2.2.2            860  36    80000001       1
+ NSSA      10.1.2.0        2.2.2.2            860  36    80000002       1
+ NSSA      0.0.0.0         3.3.3.3            862  36    80000001       1
+ NSSA      10.1.3.0        3.3.3.3            862  36    80000003      10
+ 
+		 AS External Database
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ External  10.1.2.0        2.2.2.2            897  36    80000001       1
+ External  10.1.3.0        3.3.3.3            902  36    80000001      10
+<AR2>display ospf lsdb nssa self-originate 
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		         Area: 0.0.0.0
+		 Link State Database 
+
+		         Area: 0.0.0.1
+		 Link State Database 
+
+  Type      : NSSA
+  Ls id     : 0.0.0.0
+  Adv rtr   : 2.2.2.2  
+  Ls age    : 1179 
+  Len       : 36 
+  Options   : None             *P-bit 没有置位
+  seq#      : 80000001 
+  chksum    : 0xc404
+  Net mask  : 0.0.0.0 
+  TOS 0  Metric: 1 
+  E type    : 2
+  Forwarding Address : 0.0.0.0 
+  Tag       : 1 
+  Priority  : Low
+
+  Type      : NSSA
+  Ls id     : 10.1.2.0
+  Adv rtr   : 2.2.2.2  
+  Ls age    : 1179 
+  Len       : 36 
+  Options   : None             *P-bit 没有置位
+  seq#      : 80000002 
+  chksum    : 0xec96
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 1 
+  E type    : 2
+  Forwarding Address : 10.1.22.22 
+  Tag       : 1 
+  Priority  : Low
+```
+
+同时，我们可以看到，AR2 作为 NSSA ABR 向 Area 1 中产生 Type-7 默认路由 **`0.0.0.0/0`**，该默认 Type-7 LSA 的 P-bit 清零。根据 RFC 3101，由 NSSA ABR 产生的 Type-7 默认 LSA 不会被翻译成 Type-5 LSA。
+
+从 **`display ospf lsdb ase self-originate`** 可以看出，AR3 自己只产生了 **`10.1.3.0/24`** 的 Type-5 LSA，并没有以 **`3.3.3.3`** 作为 Advertising Router 产生 **`10.1.2.0/24`** 的 Type-5 LSA。这说明 AR3 没有把 AR2 在 NSSA Area 1 中产生的 **`10.1.2.0/24`** Type-7 LSA 翻译成 Type-5 LSA。
+
+```java{.line-numbers}
+<AR3>display ospf lsdb ase self-originate 
+
+	 OSPF Process 1 with Router ID 3.3.3.3
+		 Link State Database
+
+  Type      : External
+  Ls id     : 10.1.3.0
+  Adv rtr   : 3.3.3.3  
+  Ls age    : 1180 
+  Len       : 36 
+  Options   :  E  
+  seq#      : 80000001 
+  chksum    : 0x4f5e
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 10 
+  E type    : 2
+  Forwarding Address : 0.0.0.0 
+  Tag       : 1 
+  Priority  : Low
+```
 
 ## 4.Forwarding Address 的作用
 
@@ -797,4 +970,535 @@ FA 为 **`0.0.0.0`**，访问外部路由的数据包转发给 ASBR。如果 FA 
   - 如果 **`FA=0.0.0.0`**，区域内根据 LSA1/2 计算路由，区域间根据 LSA4 计算路由。
   - 如果 **`FA!=0.0.0.0`**，区域内根据 LSA1/2 计算路由，区域间根据 LSA3 计算路由。
 
-## 5.FA 
+## 5.FA 的意义
+
+### 5.1 防止外部路由的次优路径
+
+#### 5.1.1 FA 是 LOOPBACK 造成次优路径
+
+<div align="center">
+    <img src="ospf_static/151.png" width="700"/>
+</div>
+
+我们以上面的拓扑图为例，Area1 是 NSSA 区域，AR1 的配置如下所示，AR1 上有一个 LoopBack0 接口，IP 地址为 **`10.1.100.100`**，并且使能 OSPF 协议。同时 AR1 还运行 RIP 协议，将外部 RIP 路由 **`10.6.6.6/24`** 的信息引入 OSPF 区域中，此时 AR1 是 ASBR。
+
+```java{.line-numbers}
+#
+ sysname AR1
+#
+interface GigabitEthernet0/0/0
+ ip address 10.1.123.1 255.255.255.0 
+#
+interface GigabitEthernet0/0/1
+ ip address 10.1.156.1 255.255.255.0 
+#
+interface LoopBack0
+ ip address 10.1.100.100 255.255.255.0 
+#
+ospf 1 router-id 1.1.1.1 
+ import-route rip 1 cost 10 type 2 route-policy RIP_TO_OSPF
+ area 0.0.0.1 
+  network 10.1.100.100 0.0.0.0 
+  network 10.1.123.1 0.0.0.0 
+  nssa
+#
+rip 1
+ undo summary
+ version 2
+ network 10.0.0.0
+#
+route-policy RIP_TO_OSPF permit node 10 
+ if-match ip-prefix AR6_LOOPBACK0 
+#
+ip ip-prefix AR6_LOOPBACK0 index 10 permit 10.6.6.0 24
+```
+
+由于 AR1 学到 **`10.6.6.0/24`** 的 RIP 下一跳为 **`10.1.156.6`**，但 **`10.1.156.0/24`** 所在接口 **`GE0/0/1`** 没有作为 Area1 NSSA 的 active OSPF 接口发布，因此 AR1 不能把外部下一跳 **`10.1.156.6`** 作为 Type-7 LSA 的 FA。此时 AR1 被迫从自身 NSSA active interface 地址中选择 FA。华为设备在 NSSA 生成 NSSA LSA 时优先选择 LoopBack 地址作为 FA，因此 FA 被设置为 **`10.1.100.100`**，而不是外部 RIP 路由的下一跳地址。
+
+```java{.line-numbers}
+[AR1]display ospf lsdb nssa self-originate 
+
+	 OSPF Process 1 with Router ID 1.1.1.1
+		         Area: 0.0.0.1
+		 Link State Database 
+
+  Type      : NSSA
+  Ls id     : 10.6.6.0
+  Adv rtr   : 1.1.1.1  
+  Ls age    : 660 
+  Len       : 36 
+  Options   :  NP  
+  seq#      : 80000001 
+  chksum    : 0xc809
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 10 
+  E type    : 2
+  Forwarding Address : 10.1.100.100 
+  Tag       : 1 
+  Priority  : Low
+```
+
+根据 AR1 的 OSPF lsdb 可知，AR2 和 AR3 同时向 NSSA Area1 区域中产生 LSA7 默认路由。根据 AR4 OSPF lsdb 中产生的 Router LSA 可知，AR2 和 AR3 都是 ASBR，这是因为根据 RFC 3101，ALL NSSA border routers set bit E in those router-LSAs originated into directly attached Type-5 capable areas. An NSSA's AS boundary routers also set bit E in their router-LSAs originated into the NSSA. 也就是所有 NSSA ABR 在它们连接的 Type-5-capable area，也就是普通区域/骨干区域里发布 Router-LSA 时，都要设置 E bit（表示 ASBR）。
+
+这里的 **`Type-5 capable areas`** 指能承载 **`Type-5 AS-external-LSA`** 的区域，也就是普通区域和骨干区域，不包括 stub/NSSA 区域。
+
+```java{.line-numbers}
+[AR1]display ospf lsdb 
+
+	 OSPF Process 1 with Router ID 1.1.1.1
+		 Link State Database 
+
+		         Area: 0.0.0.1
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ Router    2.2.2.2         2.2.2.2           1344  36    80000006       1
+ Router    1.1.1.1         1.1.1.1           1340  48    8000000A       1
+ Router    3.3.3.3         3.3.3.3           1338  36    80000005       1
+ Network   10.1.123.1      1.1.1.1           1340  36    80000004       0
+ Sum-Net   10.1.45.0       2.2.2.2           1363  28    80000001       2
+ Sum-Net   10.1.45.0       3.3.3.3           1346  28    80000001       2
+ Sum-Net   10.1.234.0      2.2.2.2           1363  28    80000001       1
+ Sum-Net   10.1.234.0      3.3.3.3           1346  28    80000001       1
+ NSSA      10.6.6.0        1.1.1.1            683  36    80000001      10
+ NSSA      0.0.0.0         2.2.2.2           1363  36    80000001       1
+ NSSA      0.0.0.0         3.3.3.3           1346  36    80000001       1
+<AR4>display ospf lsdb router 2.2.2.2
+
+	 OSPF Process 1 with Router ID 4.4.4.4
+		         Area: 0.0.0.0
+		 Link State Database 
+
+  Type      : Router
+  Ls id     : 2.2.2.2
+  Adv rtr   : 2.2.2.2  
+  Ls age    : 1550 
+  Len       : 36 
+  Options   :  ASBR  ABR  E  
+  seq#      : 8000000a 
+  chksum    : 0x55f1
+  Link count: 1
+   * Link ID: 10.1.234.2   
+     Data   : 10.1.234.2   
+     Link Type: TransNet     
+     Metric : 1
+		         Area: 0.0.0.2
+		 Link State Database 
+<AR4>display ospf lsdb router 3.3.3.3
+
+	 OSPF Process 1 with Router ID 4.4.4.4
+		         Area: 0.0.0.0
+		 Link State Database 
+
+  Type      : Router
+  Ls id     : 3.3.3.3
+  Adv rtr   : 3.3.3.3  
+  Ls age    : 1537 
+  Len       : 36 
+  Options   :  ASBR  ABR  E  
+  seq#      : 80000008 
+  chksum    : 0x1b25
+  Link count: 1
+   * Link ID: 10.1.234.2   
+     Data   : 10.1.234.3   
+     Link Type: TransNet     
+     Metric : 1
+		         Area: 0.0.0.2
+		 Link State Database 
+```
+
+但是根据 AR4 收到的 LSA5 报文，真正负责把 AR1 产生的 NSSA Type-7 LSA 转换成 Type-5 LSA 的，只有 AR3（router-id 较大），这里的 **`AdvRouter = 3.3.3.3`** 已经说明：**`10.6.6.0/24`** 这条 Type-5 外部 LSA 是 AR3 产生的，不是 AR2 产生的。
+
+```java{.line-numbers}
+<AR4>display ospf lsdb ase 
+
+	 OSPF Process 1 with Router ID 4.4.4.4
+		 Link State Database
+
+  Type      : External
+  Ls id     : 10.6.6.0
+  Adv rtr   : 3.3.3.3  
+  Ls age    : 1687 
+  Len       : 36 
+  Options   :  E  
+  seq#      : 80000001 
+  chksum    : 0x3ce
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 10 
+  E type    : 2
+  Forwarding Address : 10.1.100.100 
+  Tag       : 1 
+  Priority  : Low
+```
+
+由于 AR4 收到的 Type-5 LSA 的 FA 地址是 AR1 的 **`LoopBack0`** 接口地址 **`10.1.100.100`**，因此 AR4 访问该外部网络 **`10.6.6.0/24`** 的流量将被转发给 OSPF 路由表中去往该 FA 地址的下一跳路由，而不是去往 ASBR AR1 的下一跳路由，也就是从 AR2（**`10.1.234.2`**）/AR3（**`10.1.234.3`**）负载均衡。
+
+```java{.line-numbers}
+<AR4>display ip routing-table 
+Route Flags: R - relay, D - download to fib
+------------------------------------------------------------------------------
+Routing Tables: Public
+         Destinations : 13       Routes : 16       
+
+Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface
+
+   10.1.100.100/32  OSPF    10   2           D   10.1.234.2      GigabitEthernet0/0/0
+                    OSPF    10   2           D   10.1.234.3      GigabitEthernet0/0/0
+       10.6.6.0/24  O_ASE   150  10          D   10.1.234.2      GigabitEthernet0/0/0
+                    O_ASE   150  10          D   10.1.234.3      GigabitEthernet0/0/0
+```
+
+同理，AR5 访问该外部网络 **`10.6.6.0/24`** 的流量将被转发给 OSPF 路由表中去往该 FA 地址的下一跳路由，而不是去往 ASBR AR1 的下一跳路由，也就是从 AR4（**`10.1.45.4`**）前往。这就造成了次优路径。
+
+```java{.line-numbers}
+<AR5>display ospf routing 
+
+	 OSPF Process 1 with Router ID 5.5.5.5
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.45.0/24       1     Transit    10.1.45.5       5.5.5.5         0.0.0.2
+ 10.1.100.100/32    3     Inter-area 10.1.45.4       4.4.4.4         0.0.0.2
+ 10.1.123.0/24      3     Inter-area 10.1.45.4       4.4.4.4         0.0.0.2
+ 10.1.234.0/24      2     Inter-area 10.1.45.4       4.4.4.4         0.0.0.2
+
+ Routing for ASEs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.6.6.0/24        10        Type2      1           10.1.45.4       3.3.3.3
+
+ Total Nets: 5  
+ Intra Area: 1  Inter Area: 3  ASE: 1  NSSA: 0 
+```
+
+因此总结来说是外部下一跳网段未被 OSPF 以合适路径发布，导致 NSSA Type-7 LSA 使用 AR1 的 LoopBack 作为 FA 地址，**<font color="red">从而使外部路由递归到 AR1 LoopBack 的 OSPF 路径，产生次优转发</font>**。
+
+#### 5.1.2 FA 是外部路由下一跳
+
+当我们将 AR1 的 **`G0/0/1`** 接口发布到 OSPF 中时，满足前面的 4 条规则，**<font color="red">因此 `FA!=0`，地址是 ASBR 上外部路由的下一跳地址，即 AR4 和 AR5 收到的 LSA5 中 FA 地址就变成了外部 RIP 路由的下一跳地址 `10.1.156.6`</font>**。
+
+```java{.line-numbers}
+<AR4>display ospf lsdb ase
+
+	 OSPF Process 1 with Router ID 4.4.4.4
+		 Link State Database
+
+  Type      : External
+  Ls id     : 10.6.6.0
+  Adv rtr   : 3.3.3.3  
+  Ls age    : 21 
+  Len       : 36 
+  Options   :  E  
+  seq#      : 80000003 
+  chksum    : 0xb045
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 10 
+  E type    : 2
+  Forwarding Address : 10.1.156.6 
+  Tag       : 1 
+  Priority  : Low
+```
+
+同时，我们将 AR5 的 **`G0/0/1`** 接口发布到 OSPF 中,AR4 可以通过 Router LSA 知道该接口网段。此时 AR4 计算外部路由 **`10.6.6.0/24`** 时，会先递归查找到 FA **`10.1.156.6`** 的 OSPF 路由。由于 AR5 在 Area2 中发布了 **`10.1.156.0/24`**，**<font color="red">AR4 到 FA **`10.1.156.6`** 的最优内部路径为下一跳 **`10.1.45.5`**，因此外部路由的实际下一跳也变为 `10.1.45.5`</font>**。这里 AR5 不是 ASBR，它只是到 FA 所在网段的最优 OSPF 内部下一跳。
+
+```java{.line-numbers}
+<AR4>display ospf routing 
+
+	 OSPF Process 1 with Router ID 4.4.4.4
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.45.0/24       1     Transit    10.1.45.4       4.4.4.4         0.0.0.2
+ 10.1.234.0/24      1     Transit    10.1.234.4      4.4.4.4         0.0.0.0
+ 10.1.100.100/32    2     Inter-area 10.1.234.2      2.2.2.2         0.0.0.0
+ 10.1.100.100/32    2     Inter-area 10.1.234.3      3.3.3.3         0.0.0.0
+ 10.1.123.0/24      2     Inter-area 10.1.234.2      2.2.2.2         0.0.0.0
+ 10.1.123.0/24      2     Inter-area 10.1.234.3      3.3.3.3         0.0.0.0
+ 10.1.156.0/24      2     Stub       10.1.45.5       5.5.5.5         0.0.0.2
+
+ Routing for ASEs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.6.6.0/24        10        Type2      1           10.1.45.5       3.3.3.3
+
+ Total Nets: 8  
+ Intra Area: 3  Inter Area: 4  ASE: 1  NSSA: 0 
+```
+
+对于 AR5 来说也是同理，访问该外部网络 **`10.6.6.0/24`** 的流量将被转发给 OSPF 路由表中去往该 FA 地址 **`10.1.156.6`** 的下一跳路由。对 AR5 来说，FA **`10.1.156.6`** 与 AR5 的 **`GE0/0/1`** 在同一网段，因此 AR5 访问 **`10.6.6.0/24`** 时，外部路由递归到 FA 后，下一跳就是 **`10.1.156.6`**，相当于直接转发给外部 RIP 路由器 AR6。
+
+```java{.line-numbers}
+<AR5>display ospf routing 
+
+	 OSPF Process 1 with Router ID 5.5.5.5
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.45.0/24       1     Transit    10.1.45.5       5.5.5.5         0.0.0.2
+ 10.1.156.0/24      1     Stub       10.1.156.5      5.5.5.5         0.0.0.2
+ 10.1.100.100/32    3     Inter-area 10.1.45.4       4.4.4.4         0.0.0.2
+ 10.1.123.0/24      3     Inter-area 10.1.45.4       4.4.4.4         0.0.0.2
+ 10.1.234.0/24      2     Inter-area 10.1.45.4       4.4.4.4         0.0.0.2
+
+ Routing for ASEs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.6.6.0/24        10        Type2      1           10.1.156.6      3.3.3.3
+
+ Total Nets: 6  
+ Intra Area: 2  Inter Area: 3  ASE: 1  NSSA: 0 
+```
+
+### 5.2 防止外部路由的环路
+
+我们以下面的拓扑图为例，Area1 是 NSSA 区域，AR1 是 ASBR，在其上引入外部路由 **`10.1.1.1/24`**。并且将 AR1-AR2 之间链路的 cost 修改为 10。
+
+<div align="center">
+    <img src="ospf_static/152.png" width="650"/>
+</div>
+
+#### 5.2.1 FA 地址不为 0（无环路）
+
+AR1 产生的 LSA7 中，**`FA=10.1.100.100`**（**`10.1.100.100`** 是 R1 的 Loopback1 接口 IP），Cost-type=2，External-cost=1。边界路由器 AR2 的 **`RouterID=2.2.2.2`**，AR3 的 **`RouterID=3.3.3.3`**。
+
+```java{.line-numbers}
+[AR1-ospf-1]display ospf lsdb nssa self-originate 
+
+	 OSPF Process 1 with Router ID 1.1.1.1
+		         Area: 0.0.0.1
+		 Link State Database 
+
+  Type      : NSSA
+  Ls id     : 10.1.1.0
+  Adv rtr   : 1.1.1.1  
+  Ls age    : 9 
+  Len       : 36 
+  Options   :  NP  
+  seq#      : 80000002 
+  chksum    : 0xdf04
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 1 
+  E type    : 2
+  Forwarding Address : 10.1.100.100 
+  Tag       : 1 
+  Priority  : Low
+```
+
+NSSA 区域中，R2 和 R3 是 ABR，同时也是 ASBR。其中，R3 的 RouterID 高，OSPF 默认使用 R3 当 LSA7/5 翻译器。R2 和 R3 都收到 Area1 中泛洪的 LSA7，同时向 Area1 中产生 NSSA 默认路由。
+
+```java{.line-numbers}
+<AR3>display ospf lsdb 
+	 OSPF Process 1 with Router ID 3.3.3.3
+		 Link State Database 
+
+		         Area: 0.0.0.1
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ NSSA      0.0.0.0         3.3.3.3           1011  36    80000001       1
+ NSSA      0.0.0.0         2.2.2.2            893  36    80000001       1
+ NSSA      10.1.1.0        1.1.1.1            681  36    80000002       1
+ 
+		 AS External Database
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ External  10.1.1.0        3.3.3.3            679  36    80000002       1
+<AR2>display ospf lsdb 
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		 Link State Database 
+ 
+		         Area: 0.0.0.1
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ NSSA      0.0.0.0         2.2.2.2            927  36    80000001       1
+ NSSA      0.0.0.0         3.3.3.3           1047  36    80000001       1
+ NSSA      10.1.1.0        1.1.1.1            714  36    80000002       1
+ 
+		 AS External Database
+ Type      LinkState ID    AdvRouter          Age  Len   Sequence   Metric
+ External  10.1.1.0        3.3.3.3            715  36    80000002       1
+```
+
+经计算后，**`10.1.1.0/24`** 路由出现在 AR2 和 AR3 的路由表里，AR2 中路由下一跳指向 AR1，AR3 中 **`10.1.1.0/24`** 路由下一跳指向 AR2。边界路由器 AR3 由于 RouterID 高，执行 LSA7/5 翻译，把出现在路由表里的 **`10.1.1.0/24`** 路由向 Area0 使用 LSA5 通告。Area0 中 AR3 产生 LSA5，其内容中，通告路由器是 **`3.3.3.3`**，**`FA=10.1.100.100`**；cost-type 和 cost 值都和 LSA7 一致。
+
+```java{.line-numbers}
+<AR3>display ospf lsdb ase self-originate 
+
+	 OSPF Process 1 with Router ID 3.3.3.3
+		 Link State Database
+
+  Type      : External
+  Ls id     : 10.1.1.0
+  Adv rtr   : 3.3.3.3  
+  Ls age    : 814 
+  Len       : 36 
+  Options   :  E  
+  seq#      : 80000002 
+  chksum    : 0x1ac9
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 1 
+  E type    : 2
+  Forwarding Address : 10.1.100.100 
+  Tag       : 1 
+  Priority  : Low
+```
+
+边界路由器 AR2 从 Area0 收到 LSA5（内容为 **`10.1.1.0/24`**，Cost-type=2，**`FA=10.1.100.100`**，External-cost=1）；同时，在 Area1 中收到 LSA7（内容为 **`10.1.1.0/24`**，Cost-type=2，**`FA=10.1.100.100`**，External-cost=1）。这 2 个 LSA 的 **`FA=10.1.100.100`**。当 OSPF 外部路由的 FA（Forwarding Address）不是 **`0.0.0.0`** 时，路由器转发去外部前缀的流量时，不是递归到通告该 LSA 的 Router-ID，而是递归查找到 FA 地址的最优 OSPF 路由，并使用到 FA 的下一跳。在上面的拓扑里，AR2 不管最终依据 LSA7 还是 LSA5 安装 **`10.1.1.0/24`**，由于 FA 都是 **`10.1.100.100`**，AR2 最终都会递归到 **`10.1.100.100`** 的路由，因此下一跳指向 AR1。
+
+```java{.line-numbers}
+<AR2>display ospf routing 
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.12.0/24       10    Transit    10.1.12.2       2.2.2.2         0.0.0.1
+ 10.1.23.0/24       1     Transit    10.1.23.2       2.2.2.2         0.0.0.1
+ 10.1.24.0/24       1     Transit    10.1.24.2       2.2.2.2         0.0.0.0
+ 10.1.34.0/24       2     Transit    10.1.24.4       4.4.4.4         0.0.0.0
+ 10.1.100.100/32    10    Stub       10.1.12.1       1.1.1.1         0.0.0.1
+
+ Routing for NSSAs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.1.1.0/24        1         Type2      1           10.1.12.1       1.1.1.1
+```
+
+同理，AR4 递归到 **`10.1.100.100`** 的路由，因此下一跳指向 AR2，AR3 的下一跳指向 AR2，在这种情况下没有环路。
+
+```java{.line-numbers}
+<AR4>display ospf routing 
+
+	 OSPF Process 1 with Router ID 4.4.4.4
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.24.0/24       1     Transit    10.1.24.4       4.4.4.4         0.0.0.0
+ 10.1.34.0/24       1     Transit    10.1.34.4       4.4.4.4         0.0.0.0
+ 10.1.12.0/24       11    Inter-area 10.1.24.2       2.2.2.2         0.0.0.0
+ 10.1.23.0/24       2     Inter-area 10.1.34.3       3.3.3.3         0.0.0.0
+ 10.1.23.0/24       2     Inter-area 10.1.24.2       2.2.2.2         0.0.0.0
+ 10.1.100.100/32    11    Inter-area 10.1.24.2       2.2.2.2         0.0.0.0
+
+ Routing for ASEs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.1.1.0/24        1         Type2      1           10.1.24.2       3.3.3.3
+[AR3]display ospf routing 
+
+	 OSPF Process 1 with Router ID 3.3.3.3
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.23.0/24       1     Transit    10.1.23.3       3.3.3.3         0.0.0.1
+ 10.1.34.0/24       1     Transit    10.1.34.3       3.3.3.3         0.0.0.0
+ 10.1.12.0/24       11    Transit    10.1.23.2       2.2.2.2         0.0.0.1
+ 10.1.24.0/24       2     Transit    10.1.34.4       4.4.4.4         0.0.0.0
+ 10.1.100.100/32    11    Stub       10.1.23.2       1.1.1.1         0.0.0.1
+
+ Routing for NSSAs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.1.1.0/24        1         Type2      1           10.1.23.2       1.1.1.1
+```
+
+#### 5.2.2 FA 地址为 0（有环路）
+
+Area0 中 AR4 访问外部网络根据 FA 地址来选路，如果场景要求 Area0 中路由器访问外部网络只能经过 AR3，实现这样的需求可以有两种方法，一种是修改 IGP Cost，使 AR4 上 FA 路由的下一跳指向 AR3；另外一种方法是改 LSA5 中 FA 地址为 **`0.0.0.0`**。下面解释一下修改 FA 地址在此种场景中所带来的 OSPF 环路问题。
+
+在 R3 执行 LSA7/5 翻译时，使用如下命令：**`nssa suppress-forwarding-address`** 抑制 FA 地址，该命令将经 NSSA ABR 转换后生成的 Type5 LSA 中的 FA 设置为 **`0.0.0.0`**。这里最关键的变化是：LSA5 不再递归到 FA **`10.1.100.100`**，而是递归到 LSA5 的 ASBR，也就是 AR3。根据 RFC 2328 和 RFC 3101 的外部路由计算逻辑，当 FA 为 **`0.0.0.0`** 时，报文应该发往 ASBR 本身；当 FA 非 0 时，才查 forwarding address。
+
+```java{.line-numbers}
+[AR3-ospf-1-area-0.0.0.1]nssa suppress-forwarding-address
+[AR3-ospf-1]display ospf lsdb ase self-originate 
+
+	 OSPF Process 1 with Router ID 3.3.3.3
+		 Link State Database
+
+  Type      : External
+  Ls id     : 10.1.1.0
+  Adv rtr   : 3.3.3.3  
+  Ls age    : 14 
+  Len       : 36 
+  Options   :  E  
+  seq#      : 80000003 
+  chksum    : 0x7af
+  Net mask  : 255.255.255.0 
+  TOS 0  Metric: 1 
+  E type    : 2
+  Forwarding Address : 0.0.0.0 
+  Tag       : 1 
+  Priority  : Low
+```
+
+AR2 收到 LSA5 和 LSA7，内容如下：
+
+```java{.line-numbers}
+LSA5（FA=0.0.0.0，cost-type=2，cost=1）advRtr=3.3.3.3
+LSA7（FA=10.1.100.100，cost-type=2，cost=1）advRtr=1.1.1.1
+```
+
+对二者进行比较，R2 在 LSA5 和 LSA7 路由外部成本一致的情况下，根据 FA 选路，
+
+由于 AR2 到 LSA5 的通告路由器 **`3.3.3.3`** 的内部成本（cost=2）低于 LSA7 FA 路由 **`10.1.100.100`** 的内部成本（cost=10）。AR2 最终选择 LSA5 路由，使用 Area0 的转发路径，AR2 路由表中 **`10.1.1.0/24`** 路由的下一跳指向 AR4。
+
+```java{.line-numbers}
+[AR2-GigabitEthernet0/0/0]display ospf abr-asbr
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		 Routing Table to ABR and ASBR 
+
+ RtType      Destination       Area       Cost  Nexthop         Type
+ Intra-area  3.3.3.3           0.0.0.0    2     10.1.24.4       ABR/ASBR 
+ Intra-area  1.1.1.1           0.0.0.1    10    10.1.12.1       ASBR 
+ Intra-area  3.3.3.3           0.0.0.1    1     10.1.23.3       ABR/ASBR 
+[AR2-GigabitEthernet0/0/0]display ospf routing 
+
+	 OSPF Process 1 with Router ID 2.2.2.2
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.12.0/24       10    Transit    10.1.12.2       2.2.2.2         0.0.0.1
+ 10.1.23.0/24       1     Transit    10.1.23.2       2.2.2.2         0.0.0.1
+ 10.1.24.0/24       1     Transit    10.1.24.2       2.2.2.2         0.0.0.0
+ 10.1.34.0/24       2     Transit    10.1.24.4       4.4.4.4         0.0.0.0
+ 10.1.100.100/32    10    Stub       10.1.12.1       1.1.1.1         0.0.0.1
+
+ Routing for ASEs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.1.1.0/24        1         Type2      1           10.1.24.4       3.3.3.3
+```
+
+而 AR4 到 **`10.1.1.0/24`** 的下一跳选择 ASBR AR3。AR3 本机的情况与 AR2、AR4 不同。AR3 虽然向 Area0 产生了 FA=0 的 Type-5 LSA，但 AR3 本机计算外部路由时不会使用自己产生的 Type-5 LSA，而是使用 NSSA Area1 中 AR1 产生的 Type-7 LSA。该 LSA7 的 FA 仍为 **`10.1.100.100`**，所以 根据输出，AR3 到 **`10.1.100.100/32`** 的下一跳为 AR2。根据上面的分析结果，数据的转发环路出现：**`AR3-AR2-AR4-AR3`**。
+
+```java{.line-numbers}
+<AR4>display ospf routing 
+
+	 OSPF Process 1 with Router ID 4.4.4.4
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.24.0/24       1     Transit    10.1.24.4       4.4.4.4         0.0.0.0
+ 10.1.34.0/24       1     Transit    10.1.34.4       4.4.4.4         0.0.0.0
+ 10.1.12.0/24       11    Inter-area 10.1.24.2       2.2.2.2         0.0.0.0
+ 10.1.23.0/24       2     Inter-area 10.1.34.3       3.3.3.3         0.0.0.0
+ 10.1.23.0/24       2     Inter-area 10.1.24.2       2.2.2.2         0.0.0.0
+ 10.1.100.100/32    11    Inter-area 10.1.24.2       2.2.2.2         0.0.0.0
+
+ Routing for ASEs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.1.1.0/24        1         Type2      1           10.1.34.3       3.3.3.3
+<AR3>display ospf routing 
+
+	 OSPF Process 1 with Router ID 3.3.3.3
+		  Routing Tables 
+
+ Routing for Network 
+ Destination        Cost  Type       NextHop         AdvRouter       Area
+ 10.1.23.0/24       1     Transit    10.1.23.3       3.3.3.3         0.0.0.1
+ 10.1.34.0/24       1     Transit    10.1.34.3       3.3.3.3         0.0.0.0
+ 10.1.12.0/24       11    Transit    10.1.23.2       2.2.2.2         0.0.0.1
+ 10.1.24.0/24       2     Transit    10.1.34.4       4.4.4.4         0.0.0.0
+ 10.1.100.100/32    11    Stub       10.1.23.2       1.1.1.1         0.0.0.1
+
+ Routing for NSSAs
+ Destination        Cost      Type       Tag         NextHop         AdvRouter
+ 10.1.1.0/24        1         Type2      1           10.1.23.2       1.1.1.1
+```
