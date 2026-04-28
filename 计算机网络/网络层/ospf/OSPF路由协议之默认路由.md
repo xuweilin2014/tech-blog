@@ -22,7 +22,7 @@
 
 在骨干和普通区域中也存在 ASBR 路由器，注意 **`import-route`** (OSPF)命令不能引入外部路由的缺省路由。**<font color="red">当需要引入其他协议产生的缺省路由时，必须在 ASBR 上配置 `default-route-advertise` 命令，发布缺省路由到整个普通 OSPF 区域</font>**。
 
-骨干和普通区域产生 LSA5 默认路由使用 **`default-route-advertise`** 命令，如果加 always 参数， 则无条件产生默认路由，如果没有加 always 参数，则是有条件的，仅当路由表里有条默认路由（**其他协议或外部默认路由**）才可以产生 LSA5 的默认路由。
+骨干和普通区域产生 LSA5 默认路由使用 **`default-route-advertise`** 命令，如果加 always 参数，则无条件产生默认路由，如果没有加 always 参数，则是有条件的，仅当路由表里有条默认路由（**其他协议或外部默认路由**）才可以产生 LSA5 的默认路由。
 
 ASBR 没有缺省路由，执行 **`default-route-advertise`** 命令时按照以下需求选择是否配置 always 参数：
 

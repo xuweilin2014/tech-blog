@@ -360,7 +360,7 @@ MPLS 的参数有以下四种：
 4.LDP 会话建立
 
 <div align="center">
-    <img src="static/ldp_adj_discove2.png" width="520" height="400">
+    <img src="static/ldp_adj_discove2.png" width="520">
 </div>
 
 在连接建立成功之后，就开始交互初始化消息，初始化消息中包含各种参数。2.2.2.2 也发送自己的初始化消息，并且如果接受 1.1.1.1 的初始化消息中的各项参数，则发送一个 KeepAlive 消息表示接受，最后如果 1.1.1.1 也接受 2.2.2.2 发送过来的消息，那么就发送 KeepAlive 消息。到此 LDP 的邻居关系就建立起来了，接下来就可以互相传递标签映射消息了。
@@ -372,7 +372,7 @@ LDP 允许非直连邻居，这样一来邻居发现无需借助**组播的 HELL
 ### 4.3 标签空间
 
 <div align="center">
-    <img src="static/label_space.png" width="480" height="230">
+    <img src="static/label_space.png" width="480">
 </div>
 
 介绍 LDP 空间之前，先介绍 LDP ID，LDP ID 是一个 6B 的字段，是 LSR 的 LDP 标识符。包含 4B 的 LSR 标识符和 2B 的标签空间。当存在 loopback 接口时，LDP ID 的前 4B 是 loopback 接口的最大 IP，如果没有 IP 接口，则是活动物理接口的最大 IP。
@@ -384,7 +384,7 @@ LDP 允许非直连邻居，这样一来邻居发现无需借助**组播的 HELL
 #### Label Space: Per-Platform
 
 <div align="center">
-    <img src="static/per_platform_label_allocation.png" width="480" height="180">
+    <img src="static/per_platform_label_allocation.png" width="480">
 </div>
 
 - 基于平台（Per-platform label allocation）：本地通告出去的标签映射消息对全局有意义，从不同的接口通告出去的同一 FEC 所对应的标签相同。
